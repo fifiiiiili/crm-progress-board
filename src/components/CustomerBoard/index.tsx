@@ -49,6 +49,8 @@ import {
   resetDemoData,
   getDataUpdatedAt,
   appendFollowUpRecord,
+  onStorageModeChange,
+  recalcAllReadiness,
 } from '../../api'
 import { detectRisks } from '../../utils/risk'
 import dayjsPluginRelative from 'dayjs/plugin/relativeTime'
@@ -150,8 +152,18 @@ export default function CustomerBoard() {
   const [followUpModal, setFollowUpModal] = useState<CustomerRecord | null>(null)
   const [followUpForm] = Form.useForm()
   const [updatedAt, setUpdatedAt] = useState<string | null>(null)
+  const [storageMode, setStorageMode] = useState<'localStorage' | 'memory'>('localStorage')
+  const [storageReason, setStorageReason] = useState<string | null>(null)
 
   const currentUser = 'Demo User'
+
+  useEffect(() => {
+    const unsub = onStorageModeChange((mode, reason) => {
+      setStorageMode(mode)
+      setStorageReason(reason)
+    })
+    return unsub
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -393,18 +405,39 @@ export default function CustomerBoard() {
     { key: 'risk', label: `异常预警客户（${riskList.length}）` },
   ]
 
+  const handleRefreshBoard = useCallback(async () => {
+    setLoading(true)
+    try {
+      const changed = await recalcAllReadiness()
+      const rows = await fetchAllCustomers()
+      setData(rows)
+      setUpdatedAt(getDataUpdatedAt())
+      if (changed > 0) {
+        message.success(`刷新完成，重算了 ${changed} 个账号的准备度评分`)
+      } else {
+        message.success('刷新完成，看板已重新计算')
+      }
+    } catch (e) {
+      message.error('刷新失败：' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setLoading(false)
+    }
+  }, [message])
+
   const handleResetDemo = () => {
     modal.confirm({
-      title: '确认重置为演示初始数据？',
+      title: '确认恢复演示数据吗？',
       content: (
         <div>
-          <div>这将删除你在本浏览器里所有的改动，恢复到初始 2000 条模拟数据。</div>
+          <div>
+            该操作会清空当前浏览器中保存的手动新增和编辑记录，并重新加载 2000 条模拟数据。
+          </div>
           <div style={{ color: '#8c9098', fontSize: 12, marginTop: 6 }}>
             仅影响你自己的浏览器，不影响其他访客。
           </div>
         </div>
       ),
-      okText: '确认重置',
+      okText: '确认恢复',
       okType: 'danger',
       cancelText: '取消',
       onOk: async () => {
@@ -420,6 +453,22 @@ export default function CustomerBoard() {
 
   return (
     <div className="customer-board">
+      {storageMode === 'memory' && (
+        <Alert
+          type="warning"
+          showIcon
+          banner
+          message={
+            <span>
+              <strong>⚠️ 当前浏览器存储空间不足，已进入演示模式</strong>
+              &nbsp;·&nbsp;{storageReason || '数据仅在本次会话内有效，刷新页面会重新加载初始 2000 条模拟数据；你所做的新增、编辑、删除操作在本次会话内可见，但不会持久化到浏览器。'}
+              &nbsp;建议使用 Chrome / Edge 桌面版访问以获得完整体验。
+            </span>
+          }
+          style={{ marginBottom: 12 }}
+        />
+      )}
+
       <Alert
         type="info"
         showIcon
@@ -434,7 +483,7 @@ export default function CustomerBoard() {
         action={
           <Space>
             <Button size="small" icon={<RedoOutlined />} onClick={handleResetDemo}>
-              重置演示数据
+              恢复演示数据
             </Button>
             <Button
               size="small"
@@ -479,8 +528,11 @@ export default function CustomerBoard() {
               数据更新时间：{updatedAt ? dayjs(updatedAt).format('YYYY-MM-DD HH:mm') : '—'}
             </Tag>
           </Tooltip>
-          <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
-            刷新
+          <Button icon={<ReloadOutlined />} onClick={handleRefreshBoard} loading={loading}>
+            刷新看板
+          </Button>
+          <Button icon={<RedoOutlined />} onClick={handleResetDemo}>
+            恢复演示数据
           </Button>
           <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
             批量上传
