@@ -1,0 +1,45 @@
+.overview-page {
+  width: 100%;
+}
+
+.overview-card {
+  border-radius: 6px;
+  border-color: #e5e7eb;
+}
+.overview-card .card-title {
+  font-size: 12px;
+  color: #6b7280;
+}
+.overview-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.overview-lists .ant-card-head {
+  min-height: 40px;
+  padding: 0 14px;
+}
+.overview-lists .ant-card-head-title {
+  padding: 8px 0;
+  font-size: 14px;
+}
+
+.overview-page .mono {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #444;
+}
+
+.overview-page .ant-tag {
+  margin-right: 0;
+}
+
+/* 图表卡片头部瘦一点 */
+.overview-page .ant-card-head {
+  min-height: 40px;
+  padding: 0 14px;
+}
+.overview-page .ant-card-head-title {
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+}

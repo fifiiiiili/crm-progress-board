@@ -6,9 +6,10 @@
 import type { CustomerRecord } from '../components/CustomerBoard/constants'
 import { SEED_CUSTOMERS } from './seed'
 
-const STORAGE_KEY = 'crm-progress-board:customers:v1'
-const SEED_MARK_KEY = 'crm-progress-board:seeded:v1'
-const ID_COUNTER_KEY = 'crm-progress-board:id-counter:v1'
+const STORAGE_KEY = 'crm-progress-board:customers:v2'
+const SEED_MARK_KEY = 'crm-progress-board:seeded:v2'
+const ID_COUNTER_KEY = 'crm-progress-board:id-counter:v2'
+const UPDATED_AT_KEY = 'crm-progress-board:data-updated-at:v2'
 
 interface Storage {
   rows: CustomerRecord[]
@@ -27,6 +28,14 @@ function readStore(): Storage {
 
 function writeStore(store: Storage): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
+  localStorage.setItem(UPDATED_AT_KEY, new Date().toISOString())
+}
+
+/**
+ * 获取数据最后更新时间（ISO 字符串）
+ */
+export function getDataUpdatedAt(): string | null {
+  return localStorage.getItem(UPDATED_AT_KEY)
 }
 
 function nextId(): number {
@@ -59,6 +68,7 @@ export function resetDemoData(): void {
   localStorage.removeItem(SEED_MARK_KEY)
   localStorage.removeItem(ID_COUNTER_KEY)
   localStorage.removeItem(STORAGE_KEY)
+  localStorage.removeItem(UPDATED_AT_KEY)
   ensureSeed()
 }
 
@@ -182,5 +192,5 @@ export async function deleteCustomerById(id: number): Promise<void> {
  * 模拟一点点网络延迟，让 loading 动画能被看到
  */
 function mockLatency(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 80 + Math.random() * 120))
+  return new Promise((resolve) => setTimeout(resolve, 30 + Math.random() * 50))
 }

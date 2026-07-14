@@ -11,6 +11,10 @@ import type { TableColumnsType } from 'antd'
 import {
   STATUS_COLOR_MAP,
   BLOCK_COLOR_MAP,
+  SCALE_COLOR_MAP,
+  PRIORITY_COLOR_MAP,
+  INTENT_COLOR_MAP,
+  SOURCE_COLOR_MAP,
   type CustomerRecord,
 } from './constants'
 import './CustomerTable.css'
@@ -30,6 +34,19 @@ function formatTime(t?: string | null) {
   return d.format('YYYY-MM-DD HH:mm')
 }
 
+function formatDate(t?: string | null) {
+  if (!t) return '—'
+  const d = dayjs(t)
+  if (!d.isValid()) return '—'
+  return d.format('YYYY-MM-DD')
+}
+
+function formatMoney(n?: number | null) {
+  if (n == null) return '—'
+  if (n >= 10000) return `${(n / 10000).toFixed(1)} 万`
+  return String(n)
+}
+
 export default function CustomerTable({
   data,
   loading,
@@ -46,24 +63,24 @@ export default function CustomerTable({
       ellipsis: true,
     },
     {
-      title: '专业号ID',
+      title: '账号ID',
       dataIndex: 'pro_account_id',
-      width: 140,
+      width: 130,
       fixed: 'left',
       ellipsis: true,
       render: (v) => <span className="mono">{v}</span>,
     },
     {
-      title: '专业号名称',
+      title: '账号名称',
       dataIndex: 'pro_account_name',
-      width: 160,
+      width: 180,
       fixed: 'left',
       ellipsis: true,
     },
     {
       title: '国家/地区',
       dataIndex: 'country_region',
-      width: 90,
+      width: 100,
       ellipsis: true,
     },
     {
@@ -81,8 +98,39 @@ export default function CustomerTable({
     {
       title: '渠道经理',
       dataIndex: 'channel_manager',
-      width: 100,
+      width: 90,
       ellipsis: true,
+    },
+    {
+      title: '客户体量',
+      dataIndex: 'customer_scale',
+      width: 90,
+      render: (v: string | null) =>
+        v ? <Tag color={SCALE_COLOR_MAP[v] || 'default'}>{v}</Tag> : '—',
+      sorter: (a, b) => (a.customer_scale || '').localeCompare(b.customer_scale || ''),
+    },
+    {
+      title: '月预算',
+      dataIndex: 'monthly_budget',
+      width: 100,
+      align: 'right',
+      render: (v) => formatMoney(v),
+      sorter: (a, b) => (a.monthly_budget || 0) - (b.monthly_budget || 0),
+    },
+    {
+      title: '优先级',
+      dataIndex: 'priority',
+      width: 80,
+      render: (v: string | null) =>
+        v ? <Tag color={PRIORITY_COLOR_MAP[v] || 'default'}>{v}</Tag> : '—',
+      sorter: (a, b) => (a.priority || 'P9').localeCompare(b.priority || 'P9'),
+    },
+    {
+      title: '投放意向',
+      dataIndex: 'intent',
+      width: 100,
+      render: (v: string | null) =>
+        v ? <Tag color={INTENT_COLOR_MAP[v] || 'default'}>{v}</Tag> : '—',
     },
     {
       title: '当前状态',
@@ -102,7 +150,7 @@ export default function CustomerTable({
     {
       title: '跟进情况',
       dataIndex: 'follow_up_note',
-      width: 200,
+      width: 220,
       render: (v: string | null) =>
         v ? (
           <Tooltip title={v} placement="topLeft">
@@ -115,7 +163,7 @@ export default function CustomerTable({
     {
       title: '下一步动作',
       dataIndex: 'next_action',
-      width: 160,
+      width: 180,
       render: (v: string | null) =>
         v ? (
           <Tooltip title={v} placement="topLeft">
@@ -126,7 +174,7 @@ export default function CustomerTable({
         ),
     },
     {
-      title: '最近跟进时间',
+      title: '最近跟进',
       dataIndex: 'last_follow_up_at',
       width: 140,
       render: (v: string | null) => formatTime(v),
@@ -138,9 +186,20 @@ export default function CustomerTable({
       defaultSortOrder: 'descend',
     },
     {
+      title: '线索创建',
+      dataIndex: 'lead_created_at',
+      width: 110,
+      render: (v: string | null) => formatDate(v),
+      sorter: (a, b) => {
+        const at = a.lead_created_at ? dayjs(a.lead_created_at).valueOf() : 0
+        const bt = b.lead_created_at ? dayjs(b.lead_created_at).valueOf() : 0
+        return at - bt
+      },
+    },
+    {
       title: '聊天截图',
       dataIndex: 'chat_screenshots',
-      width: 100,
+      width: 90,
       align: 'center',
       render: (_v, record) => {
         const count = record.chat_screenshots?.length || 0
@@ -174,14 +233,15 @@ export default function CustomerTable({
       title: '数据来源',
       dataIndex: 'source_type',
       width: 110,
-      render: (v: string) =>
-        v === '表格上传' ? (
-          <Tag color="processing" icon={<LockOutlined />}>
+      render: (v: string) => {
+        const color = SOURCE_COLOR_MAP[v] || 'default'
+        const icon = v === '手动新增' ? undefined : <LockOutlined />
+        return (
+          <Tag color={color} icon={icon}>
             {v}
           </Tag>
-        ) : (
-          <Tag color="success">{v}</Tag>
-        ),
+        )
+      },
     },
     {
       title: '创建人',
@@ -189,17 +249,6 @@ export default function CustomerTable({
       width: 100,
       ellipsis: true,
       render: (v, r) => v || r.author_name || '—',
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      width: 140,
-      render: (v: string | null) => formatTime(v),
-      sorter: (a, b) => {
-        const at = a.created_at ? dayjs(a.created_at).valueOf() : 0
-        const bt = b.created_at ? dayjs(b.created_at).valueOf() : 0
-        return at - bt
-      },
     },
     {
       title: '更新时间',
@@ -213,7 +262,8 @@ export default function CustomerTable({
       width: 140,
       fixed: 'right',
       render: (_v, record) => {
-        const isProtected = record.source_type === '表格上传'
+        const isProtected =
+          record.source_type === '表格上传' || record.source_type === '模拟数据'
         return (
           <Space size={4}>
             <Button
@@ -227,7 +277,7 @@ export default function CustomerTable({
             <Tooltip
               title={
                 isProtected
-                  ? '该数据来源于表格上传，已开启数据保护，不支持删除'
+                  ? '该数据为受保护数据，不支持删除'
                   : ''
               }
             >
@@ -256,7 +306,7 @@ export default function CustomerTable({
       columns={columns}
       loading={loading}
       size="middle"
-      scroll={{ x: 2200, y: 'calc(100vh - 420px)' }}
+      scroll={{ x: 2700, y: 'calc(100vh - 460px)' }}
       pagination={{
         pageSize: 20,
         showSizeChanger: true,

@@ -1,9 +1,22 @@
 import { useEffect } from 'react'
-import { Modal, Form, Input, Select, DatePicker, Row, Col, message } from 'antd'
+import {
+  Modal,
+  Form,
+  Input,
+  Select,
+  DatePicker,
+  InputNumber,
+  Row,
+  Col,
+  message,
+} from 'antd'
 import dayjs from 'dayjs'
 import {
   STATUS_OPTIONS,
   BLOCK_TYPE_OPTIONS,
+  CUSTOMER_SCALE_OPTIONS,
+  PRIORITY_OPTIONS,
+  INTENT_OPTIONS,
   type CustomerRecord,
   type ChatScreenshot,
 } from './constants'
@@ -31,6 +44,9 @@ export default function CustomerForm({ open, mode, initial, onCancel, onSubmit }
           last_follow_up_at: initial.last_follow_up_at
             ? dayjs(initial.last_follow_up_at)
             : null,
+          lead_created_at: initial.lead_created_at
+            ? dayjs(initial.lead_created_at)
+            : null,
         })
       } else {
         form.resetFields()
@@ -46,6 +62,9 @@ export default function CustomerForm({ open, mode, initial, onCancel, onSubmit }
         last_follow_up_at: values.last_follow_up_at
           ? (values.last_follow_up_at as dayjs.Dayjs).toISOString()
           : null,
+        lead_created_at: values.lead_created_at
+          ? (values.lead_created_at as dayjs.Dayjs).toISOString()
+          : null,
       }
       await onSubmit(payload)
     } catch (err) {
@@ -59,7 +78,7 @@ export default function CustomerForm({ open, mode, initial, onCancel, onSubmit }
     <Modal
       open={open}
       title={isEdit ? '编辑客户' : '新增客户'}
-      width={880}
+      width={920}
       onCancel={onCancel}
       onOk={handleOk}
       okText={isEdit ? '保存' : '新增'}
@@ -76,16 +95,16 @@ export default function CustomerForm({ open, mode, initial, onCancel, onSubmit }
               name="customer_source"
               rules={[{ required: true, message: '请填写客户来源' }]}
             >
-              <Input placeholder="例：AM推荐 / 客户主动咨询 / 存量迁移" />
+              <Input placeholder="例：AM 推荐 / 客户主动咨询 / 存量迁移" />
             </Form.Item>
           </Col>
           <Col span={12}>
             <Form.Item
-              label="专业号 ID"
+              label="账号 ID"
               name="pro_account_id"
-              rules={[{ required: true, message: '请填写专业号 ID' }]}
+              rules={[{ required: true, message: '请填写账号 ID' }]}
             >
-              <Input placeholder="填写客户专业号 ID" disabled={isEdit} />
+              <Input placeholder="填写客户账号 ID（唯一）" disabled={isEdit} />
             </Form.Item>
           </Col>
         </Row>
@@ -93,11 +112,11 @@ export default function CustomerForm({ open, mode, initial, onCancel, onSubmit }
         <Row gutter={16}>
           <Col span={12}>
             <Form.Item
-              label="专业号名称"
+              label="账号名称"
               name="pro_account_name"
-              rules={[{ required: true, message: '请填写专业号名称' }]}
+              rules={[{ required: true, message: '请填写账号名称' }]}
             >
-              <Input placeholder="专业号显示名称" />
+              <Input placeholder="账号显示名称" />
             </Form.Item>
           </Col>
           <Col span={12}>
@@ -121,15 +140,70 @@ export default function CustomerForm({ open, mode, initial, onCancel, onSubmit }
         </Row>
 
         <Row gutter={16}>
-          <Col span={12}>
+          <Col span={8}>
             <Form.Item
               label="对应渠道经理"
               name="channel_manager"
               rules={[{ required: true, message: '请填写渠道经理' }]}
             >
-              <Input placeholder="花名 / 姓名" />
+              <Input placeholder="姓名 / 花名" />
             </Form.Item>
           </Col>
+          <Col span={8}>
+            <Form.Item label="客户体量" name="customer_scale">
+              <Select
+                placeholder="选择客户体量"
+                allowClear
+                options={CUSTOMER_SCALE_OPTIONS.map((s) => ({
+                  value: s.value,
+                  label: s.value,
+                }))}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item label="客户优先级" name="priority">
+              <Select
+                placeholder="选择优先级"
+                allowClear
+                options={PRIORITY_OPTIONS.map((s) => ({ value: s.value, label: s.value }))}
+              />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        <Row gutter={16}>
+          <Col span={8}>
+            <Form.Item label="预估月预算（元）" name="monthly_budget">
+              <InputNumber
+                style={{ width: '100%' }}
+                min={0}
+                step={1000}
+                placeholder="例：50000"
+              />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item label="投放意向" name="intent">
+              <Select
+                placeholder="选择投放意向"
+                allowClear
+                options={INTENT_OPTIONS.map((s) => ({ value: s.value, label: s.value }))}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item label="线索创建时间" name="lead_created_at">
+              <DatePicker
+                style={{ width: '100%' }}
+                placeholder="留空自动使用今天"
+                format="YYYY-MM-DD"
+              />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        <Row gutter={16}>
           <Col span={12}>
             <Form.Item
               label="当前状态"
@@ -142,9 +216,6 @@ export default function CustomerForm({ open, mode, initial, onCancel, onSubmit }
               />
             </Form.Item>
           </Col>
-        </Row>
-
-        <Row gutter={16}>
           <Col span={12}>
             <Form.Item label="卡点类型" name="block_type">
               <Select
@@ -154,34 +225,23 @@ export default function CustomerForm({ open, mode, initial, onCancel, onSubmit }
               />
             </Form.Item>
           </Col>
-          <Col span={12}>
-            <Form.Item label="最近跟进时间" name="last_follow_up_at">
-              <DatePicker
-                showTime
-                style={{ width: '100%' }}
-                placeholder="留空将在保存时自动更新"
-                format="YYYY-MM-DD HH:mm"
-              />
-            </Form.Item>
-          </Col>
         </Row>
 
-        <Form.Item label="跟进情况" name="follow_up_note">
-          <TextArea
-            rows={3}
-            maxLength={500}
-            showCount
-            placeholder="描述当前跟进进展"
+        <Form.Item label="最近跟进时间" name="last_follow_up_at">
+          <DatePicker
+            showTime
+            style={{ width: '100%' }}
+            placeholder="留空将在保存时自动更新"
+            format="YYYY-MM-DD HH:mm"
           />
         </Form.Item>
 
+        <Form.Item label="跟进情况" name="follow_up_note">
+          <TextArea rows={3} maxLength={500} showCount placeholder="描述当前跟进进展" />
+        </Form.Item>
+
         <Form.Item label="下一步动作" name="next_action">
-          <TextArea
-            rows={2}
-            maxLength={200}
-            showCount
-            placeholder="下一步计划做什么"
-          />
+          <TextArea rows={2} maxLength={200} showCount placeholder="下一步计划做什么" />
         </Form.Item>
 
         <Form.Item label="跟进聊天截图" name="chat_screenshots">
@@ -196,7 +256,6 @@ export default function CustomerForm({ open, mode, initial, onCancel, onSubmit }
   )
 }
 
-// Form.Item value/onChange 桥接
 function ScreenshotUploadField(props: {
   value?: ChatScreenshot[]
   onChange?: (v: ChatScreenshot[]) => void

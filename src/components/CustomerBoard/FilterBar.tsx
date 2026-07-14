@@ -5,6 +5,9 @@ import {
   STATUS_OPTIONS,
   BLOCK_TYPE_OPTIONS,
   SOURCE_TYPE_OPTIONS,
+  CUSTOMER_SCALE_OPTIONS,
+  PRIORITY_OPTIONS,
+  INTENT_OPTIONS,
 } from './constants'
 import './FilterBar.css'
 
@@ -17,6 +20,9 @@ export interface FilterState {
   industry_l1: string[]
   industry_l2: string[]
   channel_manager: string[]
+  customer_scale: string[]
+  priority: string[]
+  intent: string[]
   current_status: string[]
   block_type: string[]
   source_type: string[]
@@ -30,6 +36,9 @@ export const EMPTY_FILTER: FilterState = {
   industry_l1: [],
   industry_l2: [],
   channel_manager: [],
+  customer_scale: [],
+  priority: [],
+  intent: [],
   current_status: [],
   block_type: [],
   source_type: [],
@@ -39,7 +48,6 @@ export const EMPTY_FILTER: FilterState = {
 interface Props {
   value: FilterState
   onChange: (next: FilterState) => void
-  /** 用于生成动态下拉选项 */
   distinctValues: {
     customer_source: string[]
     country_region: string[]
@@ -65,7 +73,7 @@ export default function FilterBar({ value, onChange, distinctValues }: Props) {
             allowClear
             size="middle"
             prefix={<SearchOutlined style={{ color: '#8c9098' }} />}
-            placeholder="按 专业号 ID / 名称 / 渠道经理 模糊搜索"
+            placeholder="按 账号 ID / 名称 / 渠道经理 模糊搜索"
             value={value.keyword}
             onChange={(e) => patch({ keyword: e.target.value })}
           />
@@ -126,6 +134,36 @@ export default function FilterBar({ value, onChange, distinctValues }: Props) {
               mode="multiple"
               allowClear
               maxTagCount="responsive"
+              placeholder="客户体量"
+              value={value.customer_scale}
+              onChange={(v) => patch({ customer_scale: v })}
+              style={{ minWidth: 120 }}
+              options={CUSTOMER_SCALE_OPTIONS.map((s) => ({ value: s.value, label: s.value }))}
+            />
+            <Select
+              mode="multiple"
+              allowClear
+              maxTagCount="responsive"
+              placeholder="优先级"
+              value={value.priority}
+              onChange={(v) => patch({ priority: v })}
+              style={{ minWidth: 110 }}
+              options={PRIORITY_OPTIONS.map((s) => ({ value: s.value, label: s.value }))}
+            />
+            <Select
+              mode="multiple"
+              allowClear
+              maxTagCount="responsive"
+              placeholder="投放意向"
+              value={value.intent}
+              onChange={(v) => patch({ intent: v })}
+              style={{ minWidth: 120 }}
+              options={INTENT_OPTIONS.map((s) => ({ value: s.value, label: s.value }))}
+            />
+            <Select
+              mode="multiple"
+              allowClear
+              maxTagCount="responsive"
               placeholder="当前状态"
               value={value.current_status}
               onChange={(v) => patch({ current_status: v })}
@@ -157,7 +195,8 @@ export default function FilterBar({ value, onChange, distinctValues }: Props) {
               value={value.last_follow_up_range || undefined}
               onChange={(range) =>
                 patch({
-                  last_follow_up_range: range && range[0] && range[1] ? [range[0], range[1]] : null,
+                  last_follow_up_range:
+                    range && range[0] && range[1] ? [range[0], range[1]] : null,
                 })
               }
             />

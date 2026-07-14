@@ -7,6 +7,9 @@ import {
   EXCEL_HEADER_MAP,
   STATUS_OPTIONS,
   BLOCK_TYPE_OPTIONS,
+  CUSTOMER_SCALE_OPTIONS,
+  PRIORITY_OPTIONS,
+  INTENT_OPTIONS,
   type CustomerRecord,
 } from './constants'
 import { existingProAccountIds } from '../../api'
@@ -27,6 +30,9 @@ interface ParsedRow {
 
 const VALID_STATUS = new Set<string>(STATUS_OPTIONS.map((s) => s.value))
 const VALID_BLOCK = new Set<string>(BLOCK_TYPE_OPTIONS.map((s) => s.value))
+const VALID_SCALE = new Set<string>(CUSTOMER_SCALE_OPTIONS.map((s) => s.value))
+const VALID_PRIORITY = new Set<string>(PRIORITY_OPTIONS.map((s) => s.value))
+const VALID_INTENT = new Set<string>(INTENT_OPTIONS.map((s) => s.value))
 
 export default function BulkImportModal({ open, currentUser, onCancel, onSubmit }: Props) {
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([])
@@ -52,7 +58,6 @@ export default function BulkImportModal({ open, currentUser, onCancel, onSubmit 
   const parseTime = (v: unknown): string | null => {
     if (!v) return null
     if (typeof v === 'number') {
-      // Excel 序列号
       const d = XLSX.SSF.parse_date_code(v)
       if (d) {
         return dayjs(new Date(d.y, d.m - 1, d.d, d.H, d.M, d.S)).toISOString()
@@ -77,7 +82,6 @@ export default function BulkImportModal({ open, currentUser, onCancel, onSubmit 
         return false
       }
 
-      // 检查表头
       const headers = Object.keys(rows[0])
       const knownHeaders = headers.filter((h) => EXCEL_HEADER_MAP[h])
       if (!knownHeaders.length) {
@@ -88,7 +92,6 @@ export default function BulkImportModal({ open, currentUser, onCancel, onSubmit 
         return false
       }
 
-      // 拼数据
       const parsed: ParsedRow[] = rows.map((raw) => {
         const record: Partial<CustomerRecord> = {}
         const errors: string[] = []
@@ -97,18 +100,21 @@ export default function BulkImportModal({ open, currentUser, onCancel, onSubmit 
           if (raw[cnKey] === undefined) continue
           const val = parseValue(raw, cnKey)
           if (!val) continue
-          if (fieldKey === 'last_follow_up_at') {
+          if (fieldKey === 'last_follow_up_at' || fieldKey === 'lead_created_at') {
             const t = parseTime(raw[cnKey])
             if (t) (record as Record<string, unknown>)[fieldKey] = t
+          } else if (fieldKey === 'monthly_budget') {
+            const num = Number(val)
+            if (Number.isFinite(num)) (record as Record<string, unknown>)[fieldKey] = num
           } else {
             ;(record as Record<string, unknown>)[fieldKey] = val
           }
         }
 
         // 必填校验
-        if (!record.pro_account_id) errors.push('专业号 ID 为空')
+        if (!record.pro_account_id) errors.push('账号 ID 为空')
         if (!record.customer_source) errors.push('客户来源为空')
-        if (!record.pro_account_name) errors.push('专业号名称为空')
+        if (!record.pro_account_name) errors.push('账号名称为空')
         if (!record.channel_manager) errors.push('渠道经理为空')
         if (!record.current_status) errors.push('当前状态为空')
         else if (!VALID_STATUS.has(record.current_status)) {
@@ -117,26 +123,33 @@ export default function BulkImportModal({ open, currentUser, onCancel, onSubmit 
         if (record.block_type && !VALID_BLOCK.has(record.block_type)) {
           errors.push(`卡点类型「${record.block_type}」不在允许范围`)
         }
+        if (record.customer_scale && !VALID_SCALE.has(record.customer_scale)) {
+          errors.push(`客户体量「${record.customer_scale}」不在允许范围`)
+        }
+        if (record.priority && !VALID_PRIORITY.has(record.priority)) {
+          errors.push(`优先级「${record.priority}」不在允许范围`)
+        }
+        if (record.intent && !VALID_INTENT.has(record.intent)) {
+          errors.push(`投放意向「${record.intent}」不在允许范围`)
+        }
 
         return { raw, record, errors }
       })
 
-      // 去重检查
       const validIds = parsed
         .filter((p) => !p.errors.length && p.record.pro_account_id)
         .map((p) => p.record.pro_account_id!)
       const existingIds = await existingProAccountIds(validIds)
-      // 文件内自己也可能重复
       const seenInFile = new Set<string>()
       for (const p of parsed) {
         const id = p.record.pro_account_id
         if (!id) continue
         if (existingIds.has(id)) {
           p.isDuplicate = true
-          p.errors.push('专业号 ID 在系统中已存在')
+          p.errors.push('账号 ID 在系统中已存在')
         } else if (seenInFile.has(id)) {
           p.isDuplicate = true
-          p.errors.push('文件内重复的专业号 ID')
+          p.errors.push('文件内重复的账号 ID')
         } else {
           seenInFile.add(id)
         }
@@ -146,32 +159,56 @@ export default function BulkImportModal({ open, currentUser, onCancel, onSubmit 
     } catch (e) {
       message.error('解析失败：' + (e instanceof Error ? e.message : String(e)))
     }
-    return false // 阻止默认上传
+    return false
   }
 
   const downloadTemplate = () => {
-    const headers = Object.keys(EXCEL_HEADER_MAP)
+    // 使用唯一表头（避免多个别名重复列）
+    const headers = [
+      '客户来源',
+      '账号 ID',
+      '账号名称',
+      '国家/地区',
+      '一级行业',
+      '二级行业',
+      '对应渠道经理',
+      '客户体量',
+      '预估月预算',
+      '客户优先级',
+      '投放意向',
+      '当前状态',
+      '卡点类型',
+      '跟进情况',
+      '下一步动作',
+      '最近跟进时间',
+      '线索创建时间',
+      '备注',
+    ]
     const sample: Record<string, string> = {}
     for (const h of headers) sample[h] = ''
-    sample['客户来源'] = 'AM推荐'
-    sample['专业号 ID'] = 'XHS_12345678'
-    sample['专业号名称'] = '示例品牌'
+    sample['客户来源'] = 'AM 推荐'
+    sample['账号 ID'] = 'MK1234567'
+    sample['账号名称'] = '示例品牌 Studio 001'
     sample['国家/地区'] = '日本'
     sample['一级行业'] = '美妆个护'
     sample['二级行业'] = '护肤'
-    sample['对应渠道经理'] = '张三'
-    sample['当前状态'] = '未跟进'
-    sample['卡点类型'] = '无卡点'
-    sample['跟进情况'] = '首次触达'
-    sample['下一步动作'] = '发送开通材料'
-    sample['最近跟进时间'] = '2026-07-10 15:00'
-    sample['备注'] = ''
+    sample['对应渠道经理'] = '林岚'
+    sample['客户体量'] = '中客户'
+    sample['预估月预算'] = '80000'
+    sample['客户优先级'] = 'P1'
+    sample['投放意向'] = '高'
+    sample['当前状态'] = '跟进中'
+    sample['卡点类型'] = '材料缺失'
+    sample['跟进情况'] = '首次触达完成，客户对合作感兴趣'
+    sample['下一步动作'] = '本周内完成开户资料收集'
+    sample['最近跟进时间'] = dayjs().format('YYYY-MM-DD HH:mm')
+    sample['线索创建时间'] = dayjs().subtract(3, 'day').format('YYYY-MM-DD')
+    sample['备注'] = '重点客户'
     const ws = XLSX.utils.json_to_sheet([sample], { header: headers })
-    // 设置列宽
     ;(ws['!cols'] as unknown as XLSX.ColInfo[]) = headers.map(() => ({ wch: 15 }))
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '客开进度')
-    XLSX.writeFile(wb, '客开进度模板.xlsx')
+    XLSX.utils.book_append_sheet(wb, ws, '客户明细')
+    XLSX.writeFile(wb, '广告客户开通进度_模板.xlsx')
   }
 
   const handleImport = async () => {
@@ -190,11 +227,16 @@ export default function BulkImportModal({ open, currentUser, onCancel, onSubmit 
         industry_l1: p.record.industry_l1 || null,
         industry_l2: p.record.industry_l2 || null,
         channel_manager: p.record.channel_manager!,
+        customer_scale: p.record.customer_scale || null,
+        monthly_budget: p.record.monthly_budget ?? null,
+        priority: p.record.priority || null,
+        intent: p.record.intent || null,
         current_status: p.record.current_status!,
         block_type: p.record.block_type || null,
         follow_up_note: p.record.follow_up_note || null,
         next_action: p.record.next_action || null,
         last_follow_up_at: p.record.last_follow_up_at || null,
+        lead_created_at: p.record.lead_created_at || new Date().toISOString(),
         chat_screenshots: null,
         remark: p.record.remark || null,
         source_type: '表格上传',
@@ -293,15 +335,15 @@ export default function BulkImportModal({ open, currentUser, onCancel, onSubmit 
                   ),
               },
               {
-                title: '专业号ID',
+                title: '账号ID',
                 dataIndex: ['record', 'pro_account_id'],
                 width: 130,
                 ellipsis: true,
               },
               {
-                title: '专业号名称',
+                title: '账号名称',
                 dataIndex: ['record', 'pro_account_name'],
-                width: 140,
+                width: 160,
                 ellipsis: true,
               },
               {
