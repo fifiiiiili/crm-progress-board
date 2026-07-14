@@ -1,0 +1,23 @@
+/**
+ * .miniapp-root 根命名空间
+ * 只放全局布局，业务组件样式就近放在各自 index.css
+ */
+
+.miniapp-root {
+  min-height: 100vh;
+  width: 100%;
+  background: #f5f7f9;
+  color: #141414;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei',
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+.miniapp-root *,
+.miniapp-root *::before,
+.miniapp-root *::after {
+  box-sizing: border-box;
+}
