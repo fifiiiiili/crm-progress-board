@@ -1,15 +1,5 @@
 import { useEffect } from 'react'
-import {
-  Modal,
-  Form,
-  Input,
-  Select,
-  DatePicker,
-  InputNumber,
-  Row,
-  Col,
-  message,
-} from 'antd'
+import { Modal, Form, Input, Select, DatePicker, Row, Col, InputNumber } from 'antd'
 import dayjs from 'dayjs'
 import {
   STATUS_OPTIONS,
@@ -17,75 +7,78 @@ import {
   CUSTOMER_SCALE_OPTIONS,
   PRIORITY_OPTIONS,
   INTENT_OPTIONS,
+  PLATFORM_OPTIONS,
+  ACCOUNT_STATUS_OPTIONS,
+  CREATIVE_STATUS_OPTIONS,
+  CREATIVE_REVIEW_OPTIONS,
+  LAUNCH_STAGE_OPTIONS,
   type CustomerRecord,
-  type ChatScreenshot,
 } from './constants'
 import ScreenshotUpload from './ScreenshotUpload'
+import type { ChatScreenshot } from './constants'
 
-const { TextArea } = Input
+const toOpts = (arr: readonly string[]) => arr.map((v) => ({ label: v, value: v }))
 
-interface Props {
+interface CustomerFormProps {
   open: boolean
   mode: 'add' | 'edit'
-  initial?: CustomerRecord | null
+  initial: CustomerRecord | null
   onCancel: () => void
   onSubmit: (values: Partial<CustomerRecord>) => Promise<void>
 }
 
-export default function CustomerForm({ open, mode, initial, onCancel, onSubmit }: Props) {
+export default function CustomerForm({
+  open,
+  mode,
+  initial,
+  onCancel,
+  onSubmit,
+}: CustomerFormProps) {
   const [form] = Form.useForm()
-  const isEdit = mode === 'edit'
 
   useEffect(() => {
-    if (open) {
-      if (initial) {
-        form.setFieldsValue({
-          ...initial,
-          last_follow_up_at: initial.last_follow_up_at
-            ? dayjs(initial.last_follow_up_at)
-            : null,
-          lead_created_at: initial.lead_created_at
-            ? dayjs(initial.lead_created_at)
-            : null,
-        })
-      } else {
-        form.resetFields()
-      }
+    if (!open) return
+    if (mode === 'edit' && initial) {
+      form.setFieldsValue({
+        ...initial,
+        last_follow_up_at: initial.last_follow_up_at ? dayjs(initial.last_follow_up_at) : null,
+        lead_created_at: initial.lead_created_at ? dayjs(initial.lead_created_at) : null,
+        first_test_date: initial.first_test_date ? dayjs(initial.first_test_date) : null,
+      })
+    } else {
+      form.resetFields()
+      form.setFieldsValue({
+        current_status: '未跟进',
+        priority: 'P2',
+        intent: '中',
+      })
     }
-  }, [open, initial, form])
+  }, [open, mode, initial, form])
 
   const handleOk = async () => {
-    try {
-      const values = await form.validateFields()
-      const payload: Partial<CustomerRecord> = {
-        ...values,
-        last_follow_up_at: values.last_follow_up_at
-          ? (values.last_follow_up_at as dayjs.Dayjs).toISOString()
-          : null,
-        lead_created_at: values.lead_created_at
-          ? (values.lead_created_at as dayjs.Dayjs).toISOString()
-          : null,
-      }
-      await onSubmit(payload)
-    } catch (err) {
-      if ((err as { errorFields?: unknown }).errorFields) return // 表单校验
-      const msg = err instanceof Error ? err.message : String(err)
-      message.error(`保存失败：${msg}`)
+    const values = await form.validateFields()
+    const payload: Partial<CustomerRecord> = {
+      ...values,
+      last_follow_up_at: values.last_follow_up_at
+        ? values.last_follow_up_at.toISOString()
+        : null,
+      lead_created_at: values.lead_created_at ? values.lead_created_at.toISOString() : null,
+      first_test_date: values.first_test_date ? values.first_test_date.toISOString() : null,
     }
+    await onSubmit(payload)
   }
 
   return (
     <Modal
       open={open}
-      title={isEdit ? '编辑客户' : '新增客户'}
-      width={920}
+      title={mode === 'add' ? '新增客户' : '编辑客户'}
       onCancel={onCancel}
       onOk={handleOk}
-      okText={isEdit ? '保存' : '新增'}
+      okText="保存"
       cancelText="取消"
+      width={960}
       destroyOnClose
       maskClosable={false}
-      getContainer={() => document.body}
     >
       <Form form={form} layout="vertical" preserve={false}>
         <Row gutter={16}>
@@ -93,172 +86,206 @@ export default function CustomerForm({ open, mode, initial, onCancel, onSubmit }
             <Form.Item
               label="客户来源"
               name="customer_source"
-              rules={[{ required: true, message: '请填写客户来源' }]}
+              rules={[{ required: true, message: '请输入客户来源' }]}
             >
-              <Input placeholder="例：AM 推荐 / 客户主动咨询 / 存量迁移" />
+              <Input placeholder="如：销售BD推荐 / 客户主动咨询" />
             </Form.Item>
           </Col>
           <Col span={12}>
             <Form.Item
               label="账号 ID"
               name="pro_account_id"
-              rules={[{ required: true, message: '请填写账号 ID' }]}
+              rules={[{ required: true, message: '请输入账号 ID' }]}
             >
-              <Input placeholder="填写客户账号 ID（唯一）" disabled={isEdit} />
+              <Input placeholder="填写账号 ID" disabled={mode === 'edit'} />
             </Form.Item>
           </Col>
-        </Row>
-
-        <Row gutter={16}>
           <Col span={12}>
             <Form.Item
               label="账号名称"
               name="pro_account_name"
-              rules={[{ required: true, message: '请填写账号名称' }]}
+              rules={[{ required: true, message: '请输入账号名称' }]}
             >
-              <Input placeholder="账号显示名称" />
+              <Input placeholder="填写账号名称" />
             </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item label="国家/地区" name="country_region">
-              <Input placeholder="例：日本 / 韩国 / 美国" />
-            </Form.Item>
-          </Col>
-        </Row>
-
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item label="一级行业" name="industry_l1">
-              <Input placeholder="例：美妆个护" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item label="二级行业" name="industry_l2">
-              <Input placeholder="例：护肤" />
-            </Form.Item>
-          </Col>
-        </Row>
-
-        <Row gutter={16}>
-          <Col span={8}>
             <Form.Item
               label="对应渠道经理"
               name="channel_manager"
-              rules={[{ required: true, message: '请填写渠道经理' }]}
+              rules={[{ required: true, message: '请输入对应渠道经理' }]}
             >
-              <Input placeholder="姓名 / 花名" />
+              <Input placeholder="填写渠道经理" />
             </Form.Item>
           </Col>
+          <Col span={8}>
+            <Form.Item label="国家/地区" name="country_region">
+              <Input placeholder="如：中国大陆 / 新加坡" />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item label="一级行业" name="industry_l1">
+              <Input placeholder="如：游戏 / 电商" />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item label="二级行业" name="industry_l2">
+              <Input placeholder="如：SLG / 服饰" />
+            </Form.Item>
+          </Col>
+
           <Col span={8}>
             <Form.Item label="客户体量" name="customer_scale">
-              <Select
-                placeholder="选择客户体量"
-                allowClear
-                options={CUSTOMER_SCALE_OPTIONS.map((s) => ({
-                  value: s.value,
-                  label: s.value,
-                }))}
-              />
+              <Select allowClear placeholder="请选择" options={toOpts(CUSTOMER_SCALE_OPTIONS)} />
             </Form.Item>
           </Col>
           <Col span={8}>
-            <Form.Item label="客户优先级" name="priority">
-              <Select
-                placeholder="选择优先级"
-                allowClear
-                options={PRIORITY_OPTIONS.map((s) => ({ value: s.value, label: s.value }))}
-              />
+            <Form.Item
+              label="客户优先级"
+              name="priority"
+              rules={[{ required: true, message: '请选择客户优先级' }]}
+            >
+              <Select placeholder="请选择" options={toOpts(PRIORITY_OPTIONS)} />
             </Form.Item>
           </Col>
-        </Row>
+          <Col span={8}>
+            <Form.Item
+              label="投放意向"
+              name="intent"
+              rules={[{ required: true, message: '请选择投放意向' }]}
+            >
+              <Select placeholder="请选择" options={toOpts(INTENT_OPTIONS)} />
+            </Form.Item>
+          </Col>
 
-        <Row gutter={16}>
-          <Col span={8}>
+          <Col span={12}>
             <Form.Item label="预估月预算（元）" name="monthly_budget">
               <InputNumber
                 style={{ width: '100%' }}
                 min={0}
                 step={1000}
-                placeholder="例：50000"
+                placeholder="如：50000"
+                formatter={(v) => (v ? `¥ ${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '')}
+                parser={(v) => Number((v || '').replace(/[¥,\s]/g, '')) as never}
               />
             </Form.Item>
           </Col>
-          <Col span={8}>
-            <Form.Item label="投放意向" name="intent">
-              <Select
-                placeholder="选择投放意向"
-                allowClear
-                options={INTENT_OPTIONS.map((s) => ({ value: s.value, label: s.value }))}
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item label="线索创建时间" name="lead_created_at">
-              <DatePicker
-                style={{ width: '100%' }}
-                placeholder="留空自动使用今天"
-                format="YYYY-MM-DD"
-              />
-            </Form.Item>
-          </Col>
-        </Row>
-
-        <Row gutter={16}>
           <Col span={12}>
             <Form.Item
               label="当前状态"
               name="current_status"
               rules={[{ required: true, message: '请选择当前状态' }]}
             >
+              <Select placeholder="请选择" options={toOpts(STATUS_OPTIONS)} />
+            </Form.Item>
+          </Col>
+
+          <Col span={12}>
+            <Form.Item label="卡点类型" name="block_type">
+              <Select allowClear placeholder="请选择" options={toOpts(BLOCK_TYPE_OPTIONS)} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label="投放平台" name="platform">
+              <Select allowClear placeholder="请选择" options={toOpts(PLATFORM_OPTIONS)} />
+            </Form.Item>
+          </Col>
+
+          <Col span={12}>
+            <Form.Item label="广告账户状态" name="account_status">
+              <Select allowClear placeholder="请选择" options={toOpts(ACCOUNT_STATUS_OPTIONS)} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label="素材状态" name="creative_status">
               <Select
-                placeholder="选择当前状态"
-                options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.value }))}
+                allowClear
+                placeholder="请选择"
+                options={toOpts(CREATIVE_STATUS_OPTIONS)}
+              />
+            </Form.Item>
+          </Col>
+
+          <Col span={8}>
+            <Form.Item label="素材数量" name="creative_count">
+              <InputNumber style={{ width: '100%' }} min={0} />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item label="素材审核结果" name="creative_review">
+              <Select
+                allowClear
+                placeholder="请选择"
+                options={toOpts(CREATIVE_REVIEW_OPTIONS)}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item label="测试预算（元）" name="test_budget">
+              <InputNumber style={{ width: '100%' }} min={0} step={1000} />
+            </Form.Item>
+          </Col>
+
+          <Col span={12}>
+            <Form.Item label="投放阶段" name="launch_stage">
+              <Select allowClear placeholder="请选择" options={toOpts(LAUNCH_STAGE_OPTIONS)} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label="首轮测试日期" name="first_test_date">
+              <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+            </Form.Item>
+          </Col>
+
+          <Col span={12}>
+            <Form.Item label="最近跟进时间" name="last_follow_up_at">
+              <DatePicker
+                showTime
+                style={{ width: '100%' }}
+                format="YYYY-MM-DD HH:mm"
               />
             </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item label="卡点类型" name="block_type">
-              <Select
-                placeholder="选择卡点类型"
-                allowClear
-                options={BLOCK_TYPE_OPTIONS.map((s) => ({ value: s.value, label: s.value }))}
-              />
+            <Form.Item label="线索创建时间" name="lead_created_at">
+              <DatePicker showTime style={{ width: '100%' }} format="YYYY-MM-DD HH:mm" />
+            </Form.Item>
+          </Col>
+
+          <Col span={24}>
+            <Form.Item label="跟进情况" name="follow_up_note">
+              <Input.TextArea rows={2} placeholder="简述客户当前跟进情况" />
+            </Form.Item>
+          </Col>
+          <Col span={24}>
+            <Form.Item label="下一步动作" name="next_action">
+              <Input.TextArea rows={2} placeholder="记录下一步计划" />
+            </Form.Item>
+          </Col>
+          <Col span={24}>
+            <Form.Item label="备注" name="remark">
+              <Input.TextArea rows={2} placeholder="其他补充信息" />
+            </Form.Item>
+          </Col>
+
+          <Col span={24}>
+            <Form.Item label="跟进聊天截图" name="chat_screenshots">
+              <ScreenshotUploadField />
             </Form.Item>
           </Col>
         </Row>
-
-        <Form.Item label="最近跟进时间" name="last_follow_up_at">
-          <DatePicker
-            showTime
-            style={{ width: '100%' }}
-            placeholder="留空将在保存时自动更新"
-            format="YYYY-MM-DD HH:mm"
-          />
-        </Form.Item>
-
-        <Form.Item label="跟进情况" name="follow_up_note">
-          <TextArea rows={3} maxLength={500} showCount placeholder="描述当前跟进进展" />
-        </Form.Item>
-
-        <Form.Item label="下一步动作" name="next_action">
-          <TextArea rows={2} maxLength={200} showCount placeholder="下一步计划做什么" />
-        </Form.Item>
-
-        <Form.Item label="跟进聊天截图" name="chat_screenshots">
-          <ScreenshotUploadField />
-        </Form.Item>
-
-        <Form.Item label="备注" name="remark">
-          <TextArea rows={2} maxLength={300} showCount placeholder="其他补充信息" />
-        </Form.Item>
       </Form>
     </Modal>
   )
 }
 
-function ScreenshotUploadField(props: {
+// —— 桥接组件：让 ScreenshotUpload 兼容 Form.Item ——
+function ScreenshotUploadField({
+  value,
+  onChange,
+}: {
   value?: ChatScreenshot[]
   onChange?: (v: ChatScreenshot[]) => void
 }) {
-  return <ScreenshotUpload value={props.value} onChange={props.onChange} />
+  return <ScreenshotUpload value={value || []} onChange={onChange || (() => {})} />
 }

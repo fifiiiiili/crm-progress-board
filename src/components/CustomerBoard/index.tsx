@@ -11,6 +11,11 @@ import {
   Tag,
   Dropdown,
   Tooltip,
+  Modal,
+  Form,
+  Input,
+  DatePicker,
+  Select,
 } from 'antd'
 import {
   ReloadOutlined,
@@ -29,6 +34,10 @@ import CustomerTable, { ScreenshotPreviewModal } from './CustomerTable'
 import CustomerForm from './CustomerForm'
 import BulkImportModal from './BulkImportModal'
 import Overview from './Overview'
+import TodoCenter from './TodoCenter'
+import RiskAlerts from './RiskAlerts'
+import RetroPage from './RetroPage'
+import AccountDetailDrawer from './AccountDetailDrawer'
 import { FIELD_TO_LABEL, type CustomerRecord } from './constants'
 import {
   fetchAllCustomers,
@@ -39,8 +48,15 @@ import {
   existsByProAccountId,
   resetDemoData,
   getDataUpdatedAt,
+  appendFollowUpRecord,
 } from '../../api'
+import { detectRisks } from '../../utils/risk'
+import dayjsPluginRelative from 'dayjs/plugin/relativeTime'
+import 'dayjs/locale/zh-cn'
 import './index.css'
+
+dayjs.extend(dayjsPluginRelative)
+dayjs.locale('zh-cn')
 
 const { Title, Text, Paragraph } = Typography
 
@@ -60,6 +76,16 @@ const EXPORT_FIELDS = [
   'intent',
   'current_status',
   'block_type',
+  'platform',
+  'account_status',
+  'creative_status',
+  'creative_count',
+  'creative_review',
+  'test_budget',
+  'launch_stage',
+  'first_test_date',
+  'readiness_score',
+  'readiness_status',
   'follow_up_note',
   'next_action',
   'last_follow_up_at',
@@ -84,11 +110,12 @@ function exportToExcel(rows: CustomerRecord[], fileNamePrefix: string) {
         f === 'last_follow_up_at' ||
         f === 'created_at' ||
         f === 'updated_at' ||
-        f === 'lead_created_at'
+        f === 'lead_created_at' ||
+        f === 'first_test_date'
       ) {
         obj[label] = v ? dayjs(v as string).format('YYYY-MM-DD HH:mm') : ''
-      } else if (f === 'monthly_budget') {
-        obj[label] = typeof v === 'number' ? v : String(v)
+      } else if (typeof v === 'number') {
+        obj[label] = v
       } else {
         obj[label] = String(v)
       }
@@ -111,12 +138,17 @@ export default function CustomerBoard() {
   const [data, setData] = useState<CustomerRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState<FilterState>(EMPTY_FILTER)
-  const [activeTab, setActiveTab] = useState<'overview' | 'detail'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'detail' | 'todo' | 'risk' | 'retro'>(
+    'overview',
+  )
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<'add' | 'edit'>('add')
   const [editing, setEditing] = useState<CustomerRecord | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [previewRecord, setPreviewRecord] = useState<CustomerRecord | null>(null)
+  const [detailRecord, setDetailRecord] = useState<CustomerRecord | null>(null)
+  const [followUpModal, setFollowUpModal] = useState<CustomerRecord | null>(null)
+  const [followUpForm] = Form.useForm()
   const [updatedAt, setUpdatedAt] = useState<string | null>(null)
 
   const currentUser = 'Demo User'
@@ -138,7 +170,6 @@ export default function CustomerBoard() {
     load()
   }, [load])
 
-  // 动态下拉选项 = 现有数据 distinct
   const distinctValues = useMemo(() => {
     const uniq = (arr: (string | null | undefined)[]) =>
       Array.from(new Set(arr.filter((v): v is string => !!v))).sort()
@@ -151,7 +182,6 @@ export default function CustomerBoard() {
     }
   }, [data])
 
-  // 前端应用筛选
   const filtered = useMemo(() => {
     const kw = filter.keyword.trim().toLowerCase()
     return data.filter((r) => {
@@ -161,10 +191,8 @@ export default function CustomerBoard() {
           .join(' | ')
         if (!hay.includes(kw)) return false
       }
-
       const inList = (list: string[], value?: string | null) =>
         list.length === 0 || (value ? list.includes(value) : false)
-
       if (!inList(filter.customer_source, r.customer_source)) return false
       if (!inList(filter.country_region, r.country_region)) return false
       if (!inList(filter.industry_l1, r.industry_l1)) return false
@@ -175,8 +203,12 @@ export default function CustomerBoard() {
       if (!inList(filter.intent, r.intent)) return false
       if (!inList(filter.current_status, r.current_status)) return false
       if (!inList(filter.block_type, r.block_type)) return false
+      if (!inList(filter.platform, r.platform)) return false
+      if (!inList(filter.account_status, r.account_status)) return false
+      if (!inList(filter.creative_status, r.creative_status)) return false
+      if (!inList(filter.launch_stage, r.launch_stage)) return false
+      if (!inList(filter.readiness_status, r.readiness_status)) return false
       if (!inList(filter.source_type, r.source_type)) return false
-
       if (filter.last_follow_up_range) {
         const [start, end] = filter.last_follow_up_range
         const t = r.last_follow_up_at ? dayjs(r.last_follow_up_at) : null
@@ -184,7 +216,6 @@ export default function CustomerBoard() {
         if (t.isBefore(start.startOf('day'))) return false
         if (t.isAfter(end.endOf('day'))) return false
       }
-
       return true
     })
   }, [data, filter])
@@ -215,51 +246,18 @@ export default function CustomerBoard() {
       }
       const now = new Date().toISOString()
       await insertCustomer({
+        ...values,
         pro_account_id: proId,
-        customer_source: values.customer_source || '',
-        pro_account_name: values.pro_account_name || '',
-        country_region: values.country_region || null,
-        industry_l1: values.industry_l1 || null,
-        industry_l2: values.industry_l2 || null,
-        channel_manager: values.channel_manager || '',
-        customer_scale: values.customer_scale || null,
-        monthly_budget: values.monthly_budget ?? null,
-        priority: values.priority || null,
-        intent: values.intent || null,
         current_status: values.current_status || '未跟进',
-        block_type: values.block_type || null,
-        follow_up_note: values.follow_up_note || null,
-        next_action: values.next_action || null,
-        last_follow_up_at: values.last_follow_up_at || now,
-        lead_created_at: values.lead_created_at || now,
-        chat_screenshots: values.chat_screenshots || null,
-        remark: values.remark || null,
         source_type: '手动新增',
         creator: currentUser,
         author_name: currentUser,
-      })
+        last_follow_up_at: values.last_follow_up_at || now,
+        lead_created_at: values.lead_created_at || now,
+      } as Omit<CustomerRecord, 'id'>)
       message.success('新增成功')
     } else if (editing?.id != null) {
-      const editable: Partial<CustomerRecord> = {
-        pro_account_name: values.pro_account_name,
-        country_region: values.country_region ?? null,
-        industry_l1: values.industry_l1 ?? null,
-        industry_l2: values.industry_l2 ?? null,
-        channel_manager: values.channel_manager,
-        customer_scale: values.customer_scale ?? null,
-        monthly_budget: values.monthly_budget ?? null,
-        priority: values.priority ?? null,
-        intent: values.intent ?? null,
-        current_status: values.current_status,
-        block_type: values.block_type ?? null,
-        follow_up_note: values.follow_up_note ?? null,
-        next_action: values.next_action ?? null,
-        last_follow_up_at: values.last_follow_up_at ?? null,
-        lead_created_at: values.lead_created_at ?? null,
-        chat_screenshots: values.chat_screenshots ?? null,
-        remark: values.remark ?? null,
-      }
-      await updateCustomerById(editing.id, editable)
+      await updateCustomerById(editing.id, values)
       message.success('保存成功')
     }
     setFormOpen(false)
@@ -302,16 +300,49 @@ export default function CustomerBoard() {
     await load()
   }
 
-  // —— 重点客户列表（用于导出）——
-  const highPriorityList = useMemo(() => {
-    return filtered.filter(
-      (r) =>
-        (r.priority === 'P0' || r.priority === 'P1') &&
-        r.current_status !== '已开通' &&
-        r.current_status !== '无效线索',
-    )
-  }, [filtered])
+  const handleViewDetail = (r: CustomerRecord) => setDetailRecord(r)
 
+  const handleAddFollowUp = (r: CustomerRecord) => {
+    setFollowUpModal(r)
+    followUpForm.resetFields()
+    followUpForm.setFieldsValue({
+      time: dayjs(),
+      operator: currentUser,
+      action: '客户触达',
+    })
+  }
+
+  const handleFollowUpSubmit = async () => {
+    if (!followUpModal?.id) return
+    const v = await followUpForm.validateFields()
+    await appendFollowUpRecord(followUpModal.id, {
+      time: v.time.toISOString(),
+      operator: v.operator,
+      action: v.action,
+      note: v.note,
+    })
+    message.success('跟进记录已添加')
+    setFollowUpModal(null)
+    await load()
+    // 更新 drawer 里的数据
+    if (detailRecord?.id === followUpModal.id) {
+      const rows = await fetchAllCustomers()
+      const found = rows.find((r) => r.id === followUpModal.id)
+      if (found) setDetailRecord(found)
+    }
+  }
+
+  // 导出预筛选列表
+  const highPriorityList = useMemo(
+    () =>
+      filtered.filter(
+        (r) =>
+          (r.priority === 'P0' || r.priority === 'P1') &&
+          r.current_status !== '已开通' &&
+          r.current_status !== '无效线索',
+      ),
+    [filtered],
+  )
   const staleList = useMemo(() => {
     const sevenDaysAgo = dayjs().subtract(7, 'day')
     return filtered.filter((r) => {
@@ -321,37 +352,29 @@ export default function CustomerBoard() {
       return dayjs(t).isBefore(sevenDaysAgo)
     })
   }, [filtered])
-
-  const blockedList = useMemo(() => {
-    return filtered.filter(
-      (r) =>
-        r.current_status === '审核卡住' ||
-        r.block_type === '资质卡审' ||
-        r.block_type === '内部审核待处理',
-    )
-  }, [filtered])
+  const blockedList = useMemo(
+    () =>
+      filtered.filter(
+        (r) =>
+          r.current_status === '审核卡住' ||
+          r.block_type === '资质卡审' ||
+          r.block_type === '内部审核待处理',
+      ),
+    [filtered],
+  )
+  const riskList = useMemo(() => filtered.filter((r) => detectRisks(r).length > 0), [filtered])
 
   const handleExport = (
-    scope: 'filtered' | 'all' | 'highPriority' | 'stale' | 'blocked',
+    scope: 'filtered' | 'all' | 'highPriority' | 'stale' | 'blocked' | 'risk',
   ) => {
     let rows: CustomerRecord[] = []
     let prefix = ''
-    if (scope === 'filtered') {
-      rows = filtered
-      prefix = '客户明细_筛选结果'
-    } else if (scope === 'all') {
-      rows = data
-      prefix = '客户明细_全部'
-    } else if (scope === 'highPriority') {
-      rows = highPriorityList
-      prefix = '高优先级待跟进客户'
-    } else if (scope === 'stale') {
-      rows = staleList
-      prefix = '超7天未更新客户'
-    } else {
-      rows = blockedList
-      prefix = '审核卡住客户'
-    }
+    if (scope === 'filtered') { rows = filtered; prefix = '客户明细_筛选结果' }
+    else if (scope === 'all') { rows = data; prefix = '客户明细_全部' }
+    else if (scope === 'highPriority') { rows = highPriorityList; prefix = '高优先级待跟进客户' }
+    else if (scope === 'stale') { rows = staleList; prefix = '超7天未更新客户' }
+    else if (scope === 'blocked') { rows = blockedList; prefix = '审核卡住客户' }
+    else { rows = riskList; prefix = '异常预警客户' }
     if (!rows.length) {
       message.warning('没有可导出的数据')
       return
@@ -364,9 +387,10 @@ export default function CustomerBoard() {
     { key: 'filtered', label: `导出当前筛选结果（${filtered.length}）` },
     { key: 'all', label: `导出全部数据（${data.length}）` },
     { type: 'divider' as const },
-    { key: 'highPriority', label: `高优先级待跟进客户（${highPriorityList.length}）` },
-    { key: 'stale', label: `超 7 天未更新客户（${staleList.length}）` },
-    { key: 'blocked', label: `审核卡住客户（${blockedList.length}）` },
+    { key: 'highPriority', label: `高优先级待跟进（${highPriorityList.length}）` },
+    { key: 'stale', label: `超 7 天未更新（${staleList.length}）` },
+    { key: 'blocked', label: `审核卡住（${blockedList.length}）` },
+    { key: 'risk', label: `异常预警客户（${riskList.length}）` },
   ]
 
   const handleResetDemo = () => {
@@ -403,17 +427,13 @@ export default function CustomerBoard() {
         message={
           <span>
             <strong>Demo 演示版</strong>
-            &nbsp;·&nbsp;本项目使用模拟数据，不包含任何真实客户或平台内部信息。
+            &nbsp;·&nbsp;本项目使用模拟数据，用于展示广告业务中客户开通、账户准备、投放准备、状态跟进、异常预警和过程复盘的管理场景，不包含任何真实客户或平台内部信息。
             数据仅保存在你当前浏览器的 localStorage 中，不同浏览器互相隔离。
           </span>
         }
         action={
           <Space>
-            <Button
-              size="small"
-              icon={<RedoOutlined />}
-              onClick={handleResetDemo}
-            >
+            <Button size="small" icon={<RedoOutlined />} onClick={handleResetDemo}>
               重置演示数据
             </Button>
             <Button
@@ -440,12 +460,22 @@ export default function CustomerBoard() {
             className="header-subtitle"
             style={{ margin: '4px 0 0' }}
           >
-            用于模拟广告业务中客户开通、账户准备、状态跟进和过程留痕的统一管理场景
+            模拟广告业务场景下的多客户、多账户、多行业并行推进：统一查看客户状态、识别重点客户、发现异常风险、生成跟进建议、沉淀复盘经验
           </Paragraph>
         </div>
         <Space wrap>
-          <Tooltip title={updatedAt ? `数据最后更新：${dayjs(updatedAt).format('YYYY-MM-DD HH:mm:ss')}` : '尚未更新'}>
-            <Tag icon={<ClockCircleOutlined />} color="default" style={{ padding: '4px 10px' }}>
+          <Tooltip
+            title={
+              updatedAt
+                ? `数据最后更新：${dayjs(updatedAt).format('YYYY-MM-DD HH:mm:ss')}`
+                : '尚未更新'
+            }
+          >
+            <Tag
+              icon={<ClockCircleOutlined />}
+              color="default"
+              style={{ padding: '4px 10px' }}
+            >
               数据更新时间：{updatedAt ? dayjs(updatedAt).format('YYYY-MM-DD HH:mm') : '—'}
             </Tag>
           </Tooltip>
@@ -453,16 +483,13 @@ export default function CustomerBoard() {
             刷新
           </Button>
           <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
-            表格批量上传
+            批量上传
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
             新增客户
           </Button>
           <Dropdown
-            menu={{
-              items: exportMenuItems,
-              onClick: ({ key }) => handleExport(key as never),
-            }}
+            menu={{ items: exportMenuItems, onClick: ({ key }) => handleExport(key as never) }}
           >
             <Button icon={<ExportOutlined />}>
               导出 <DownOutlined />
@@ -477,7 +504,7 @@ export default function CustomerBoard() {
 
       <Tabs
         activeKey={activeTab}
-        onChange={(k) => setActiveTab(k as 'overview' | 'detail')}
+        onChange={(k) => setActiveTab(k as never)}
         items={[
           {
             key: 'overview',
@@ -504,17 +531,10 @@ export default function CustomerBoard() {
                       <div>
                         <div style={{ marginBottom: 12 }}>还没有客户数据</div>
                         <Space>
-                          <Button
-                            type="primary"
-                            icon={<PlusOutlined />}
-                            onClick={handleAdd}
-                          >
+                          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
                             新增客户
                           </Button>
-                          <Button
-                            icon={<UploadOutlined />}
-                            onClick={() => setImportOpen(true)}
-                          >
+                          <Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
                             批量上传
                           </Button>
                         </Space>
@@ -529,8 +549,24 @@ export default function CustomerBoard() {
                   onEdit={handleEdit}
                   onDelete={handleDelete}
                   onPreviewScreenshots={setPreviewRecord}
+                  onViewDetail={handleViewDetail}
                 />
               ),
+          },
+          {
+            key: 'todo',
+            label: <span>✅ 待办中心</span>,
+            children: <TodoCenter records={filtered} onViewDetail={handleViewDetail} />,
+          },
+          {
+            key: 'risk',
+            label: <span>🚨 异常预警</span>,
+            children: <RiskAlerts records={filtered} onViewDetail={handleViewDetail} />,
+          },
+          {
+            key: 'retro',
+            label: <span>📚 复盘沉淀</span>,
+            children: <RetroPage currentUser={currentUser} />,
           },
         ]}
       />
@@ -555,6 +591,57 @@ export default function CustomerBoard() {
         record={previewRecord}
         onClose={() => setPreviewRecord(null)}
       />
+
+      <AccountDetailDrawer
+        open={!!detailRecord}
+        record={detailRecord}
+        onClose={() => setDetailRecord(null)}
+        onEdit={(r) => {
+          setDetailRecord(null)
+          handleEdit(r)
+        }}
+        onAddFollowUp={handleAddFollowUp}
+      />
+
+      <Modal
+        open={!!followUpModal}
+        title={`更新跟进 - ${followUpModal?.pro_account_name || ''}`}
+        onCancel={() => setFollowUpModal(null)}
+        onOk={handleFollowUpSubmit}
+        okText="保存"
+        cancelText="取消"
+        width={560}
+        destroyOnClose
+      >
+        <Form form={followUpForm} layout="vertical" preserve={false}>
+          <Form.Item
+            label="跟进时间"
+            name="time"
+            rules={[{ required: true }]}
+          >
+            <DatePicker showTime style={{ width: '100%' }} format="YYYY-MM-DD HH:mm" />
+          </Form.Item>
+          <Form.Item label="跟进人" name="operator" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item label="跟进动作" name="action" rules={[{ required: true }]}>
+            <Select
+              options={[
+                '客户触达',
+                '材料跟进',
+                '素材沟通',
+                '账户跟进',
+                '内部同步',
+                '风险提醒',
+                '其他',
+              ].map((v) => ({ label: v, value: v }))}
+            />
+          </Form.Item>
+          <Form.Item label="跟进说明" name="note" rules={[{ required: true }]}>
+            <Input.TextArea rows={3} placeholder="简述本次跟进内容" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   )
 }

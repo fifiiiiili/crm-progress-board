@@ -1,50 +1,39 @@
-import { Table, Tag, Space, Button, Tooltip, Modal, Image, Empty } from 'antd'
+import { useState } from 'react'
+import { Table, Tag, Button, Space, Tooltip, Modal, Image, Empty, Typography, Progress } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
 import {
   EditOutlined,
   DeleteOutlined,
-  PictureOutlined,
   LockOutlined,
-  InfoCircleOutlined,
+  PictureOutlined,
+  EyeOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import type { TableColumnsType } from 'antd'
 import {
   STATUS_COLOR_MAP,
-  BLOCK_COLOR_MAP,
+  BLOCK_TYPE_COLOR_MAP,
+  SOURCE_COLOR_MAP,
   SCALE_COLOR_MAP,
   PRIORITY_COLOR_MAP,
   INTENT_COLOR_MAP,
-  SOURCE_COLOR_MAP,
+  PLATFORM_COLOR_MAP,
+  ACCOUNT_STATUS_COLOR_MAP,
+  CREATIVE_STATUS_COLOR_MAP,
+  LAUNCH_STAGE_COLOR_MAP,
+  READINESS_COLOR_MAP,
   type CustomerRecord,
 } from './constants'
 import './CustomerTable.css'
 
-interface Props {
+const { Text } = Typography
+
+interface CustomerTableProps {
   data: CustomerRecord[]
   loading: boolean
   onEdit: (record: CustomerRecord) => void
   onDelete: (record: CustomerRecord) => void
   onPreviewScreenshots: (record: CustomerRecord) => void
-}
-
-function formatTime(t?: string | null) {
-  if (!t) return '—'
-  const d = dayjs(t)
-  if (!d.isValid()) return '—'
-  return d.format('YYYY-MM-DD HH:mm')
-}
-
-function formatDate(t?: string | null) {
-  if (!t) return '—'
-  const d = dayjs(t)
-  if (!d.isValid()) return '—'
-  return d.format('YYYY-MM-DD')
-}
-
-function formatMoney(n?: number | null) {
-  if (n == null) return '—'
-  if (n >= 10000) return `${(n / 10000).toFixed(1)} 万`
-  return String(n)
+  onViewDetail?: (record: CustomerRecord) => void
 }
 
 export default function CustomerTable({
@@ -53,157 +42,182 @@ export default function CustomerTable({
   onEdit,
   onDelete,
   onPreviewScreenshots,
-}: Props) {
-  const columns: TableColumnsType<CustomerRecord> = [
+  onViewDetail,
+}: CustomerTableProps) {
+  const columns: ColumnsType<CustomerRecord> = [
     {
       title: '客户来源',
       dataIndex: 'customer_source',
-      width: 110,
+      width: 120,
       fixed: 'left',
-      ellipsis: true,
     },
     {
       title: '账号ID',
       dataIndex: 'pro_account_id',
       width: 130,
       fixed: 'left',
-      ellipsis: true,
-      render: (v) => <span className="mono">{v}</span>,
+      render: (v: string, record) =>
+        onViewDetail ? (
+          <a onClick={() => onViewDetail(record)} className="mono-font">
+            {v}
+          </a>
+        ) : (
+          <Text className="mono-font">{v}</Text>
+        ),
     },
     {
       title: '账号名称',
       dataIndex: 'pro_account_name',
       width: 180,
-      fixed: 'left',
-      ellipsis: true,
+      render: (v: string, record) =>
+        onViewDetail ? <a onClick={() => onViewDetail(record)}>{v}</a> : v,
     },
     {
       title: '国家/地区',
       dataIndex: 'country_region',
-      width: 100,
-      ellipsis: true,
+      width: 110,
     },
     {
       title: '一级行业',
       dataIndex: 'industry_l1',
       width: 100,
-      ellipsis: true,
     },
     {
       title: '二级行业',
       dataIndex: 'industry_l2',
-      width: 100,
-      ellipsis: true,
+      width: 110,
     },
     {
       title: '渠道经理',
       dataIndex: 'channel_manager',
-      width: 90,
-      ellipsis: true,
+      width: 110,
     },
     {
       title: '客户体量',
       dataIndex: 'customer_scale',
       width: 90,
-      render: (v: string | null) =>
-        v ? <Tag color={SCALE_COLOR_MAP[v] || 'default'}>{v}</Tag> : '—',
-      sorter: (a, b) => (a.customer_scale || '').localeCompare(b.customer_scale || ''),
+      render: (v: string) => (v ? <Tag color={SCALE_COLOR_MAP[v as never]}>{v}</Tag> : '—'),
     },
     {
-      title: '月预算',
+      title: '预估月预算',
       dataIndex: 'monthly_budget',
-      width: 100,
+      width: 120,
       align: 'right',
-      render: (v) => formatMoney(v),
       sorter: (a, b) => (a.monthly_budget || 0) - (b.monthly_budget || 0),
+      render: (v: number) => (v ? `¥ ${v.toLocaleString()}` : '—'),
     },
     {
       title: '优先级',
       dataIndex: 'priority',
       width: 80,
-      render: (v: string | null) =>
-        v ? <Tag color={PRIORITY_COLOR_MAP[v] || 'default'}>{v}</Tag> : '—',
-      sorter: (a, b) => (a.priority || 'P9').localeCompare(b.priority || 'P9'),
+      render: (v: string) => (v ? <Tag color={PRIORITY_COLOR_MAP[v as never]}>{v}</Tag> : '—'),
     },
     {
       title: '投放意向',
       dataIndex: 'intent',
       width: 100,
-      render: (v: string | null) =>
-        v ? <Tag color={INTENT_COLOR_MAP[v] || 'default'}>{v}</Tag> : '—',
+      render: (v: string) => (v ? <Tag color={INTENT_COLOR_MAP[v as never]}>{v}</Tag> : '—'),
     },
     {
       title: '当前状态',
       dataIndex: 'current_status',
       width: 130,
-      render: (v: string) =>
-        v ? <Tag color={STATUS_COLOR_MAP[v] || 'default'}>{v}</Tag> : '—',
-      sorter: (a, b) => (a.current_status || '').localeCompare(b.current_status || ''),
+      render: (v: string) => <Tag color={STATUS_COLOR_MAP[v as never]}>{v}</Tag>,
     },
     {
       title: '卡点类型',
       dataIndex: 'block_type',
-      width: 140,
-      render: (v: string | null) =>
-        v ? <Tag color={BLOCK_COLOR_MAP[v] || 'default'}>{v}</Tag> : '—',
+      width: 130,
+      render: (v: string) =>
+        v ? <Tag color={BLOCK_TYPE_COLOR_MAP[v as never]}>{v}</Tag> : '—',
+    },
+    {
+      title: '投放平台',
+      dataIndex: 'platform',
+      width: 100,
+      render: (v: string) => (v ? <Tag color={PLATFORM_COLOR_MAP[v as never]}>{v}</Tag> : '—'),
+    },
+    {
+      title: '账户状态',
+      dataIndex: 'account_status',
+      width: 100,
+      render: (v: string) =>
+        v ? <Tag color={ACCOUNT_STATUS_COLOR_MAP[v as never]}>{v}</Tag> : '—',
+    },
+    {
+      title: '素材状态',
+      dataIndex: 'creative_status',
+      width: 100,
+      render: (v: string) =>
+        v ? <Tag color={CREATIVE_STATUS_COLOR_MAP[v as never]}>{v}</Tag> : '—',
+    },
+    {
+      title: '投放阶段',
+      dataIndex: 'launch_stage',
+      width: 100,
+      render: (v: string) =>
+        v ? <Tag color={LAUNCH_STAGE_COLOR_MAP[v as never]}>{v}</Tag> : '—',
+    },
+    {
+      title: '准备度评分',
+      dataIndex: 'readiness_score',
+      width: 130,
+      sorter: (a, b) => (a.readiness_score || 0) - (b.readiness_score || 0),
+      render: (v: number) => {
+        const score = v || 0
+        const color = score >= 80 ? '#52c41a' : score >= 60 ? '#1677ff' : score >= 40 ? '#faad14' : '#f5222d'
+        return (
+          <Space size={6}>
+            <Progress
+              percent={score}
+              size={[60, 6]}
+              strokeColor={color}
+              showInfo={false}
+            />
+            <Text strong style={{ color }}>{score}</Text>
+          </Space>
+        )
+      },
+    },
+    {
+      title: '准备状态',
+      dataIndex: 'readiness_status',
+      width: 130,
+      render: (v: string) => (v ? <Tag color={READINESS_COLOR_MAP[v as never]}>{v}</Tag> : '—'),
     },
     {
       title: '跟进情况',
       dataIndex: 'follow_up_note',
       width: 220,
-      render: (v: string | null) =>
-        v ? (
-          <Tooltip title={v} placement="topLeft">
-            <div className="ellipsis-2">{v}</div>
-          </Tooltip>
-        ) : (
-          '—'
-        ),
+      ellipsis: { showTitle: true },
+      render: (v: string) => v || '—',
     },
     {
-      title: '下一步动作',
+      title: '下一步',
       dataIndex: 'next_action',
       width: 180,
-      render: (v: string | null) =>
-        v ? (
-          <Tooltip title={v} placement="topLeft">
-            <div className="ellipsis-2">{v}</div>
-          </Tooltip>
-        ) : (
-          '—'
-        ),
+      ellipsis: { showTitle: true },
+      render: (v: string) => v || '—',
     },
     {
       title: '最近跟进',
       dataIndex: 'last_follow_up_at',
       width: 140,
-      render: (v: string | null) => formatTime(v),
       sorter: (a, b) => {
-        const at = a.last_follow_up_at ? dayjs(a.last_follow_up_at).valueOf() : 0
-        const bt = b.last_follow_up_at ? dayjs(b.last_follow_up_at).valueOf() : 0
-        return at - bt
+        const ta = a.last_follow_up_at ? new Date(a.last_follow_up_at).getTime() : 0
+        const tb = b.last_follow_up_at ? new Date(b.last_follow_up_at).getTime() : 0
+        return ta - tb
       },
-      defaultSortOrder: 'descend',
+      render: (v: string) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—'),
     },
     {
-      title: '线索创建',
-      dataIndex: 'lead_created_at',
-      width: 110,
-      render: (v: string | null) => formatDate(v),
-      sorter: (a, b) => {
-        const at = a.lead_created_at ? dayjs(a.lead_created_at).valueOf() : 0
-        const bt = b.lead_created_at ? dayjs(b.lead_created_at).valueOf() : 0
-        return at - bt
-      },
-    },
-    {
-      title: '聊天截图',
+      title: '截图',
       dataIndex: 'chat_screenshots',
-      width: 90,
+      width: 70,
       align: 'center',
-      render: (_v, record) => {
-        const count = record.chat_screenshots?.length || 0
-        if (!count) return <span className="empty-cell">—</span>
+      render: (v: unknown, record) => {
+        const arr = Array.isArray(v) ? v : []
+        if (arr.length === 0) return <Text type="secondary">—</Text>
         return (
           <Button
             type="link"
@@ -211,61 +225,37 @@ export default function CustomerTable({
             icon={<PictureOutlined />}
             onClick={() => onPreviewScreenshots(record)}
           >
-            {count}
+            {arr.length}
           </Button>
         )
       },
     },
     {
-      title: '备注',
-      dataIndex: 'remark',
-      width: 160,
-      render: (v: string | null) =>
-        v ? (
-          <Tooltip title={v} placement="topLeft">
-            <div className="ellipsis-2">{v}</div>
-          </Tooltip>
-        ) : (
-          '—'
-        ),
-    },
-    {
-      title: '数据来源',
+      title: '来源',
       dataIndex: 'source_type',
-      width: 110,
-      render: (v: string) => {
-        const color = SOURCE_COLOR_MAP[v] || 'default'
-        const icon = v === '手动新增' ? undefined : <LockOutlined />
-        return (
-          <Tag color={color} icon={icon}>
-            {v}
-          </Tag>
-        )
-      },
-    },
-    {
-      title: '创建人',
-      dataIndex: 'creator',
       width: 100,
-      ellipsis: true,
-      render: (v, r) => v || r.author_name || '—',
-    },
-    {
-      title: '更新时间',
-      dataIndex: 'updated_at',
-      width: 140,
-      render: (v: string | null) => formatTime(v),
+      render: (v: string) => <Tag color={SOURCE_COLOR_MAP[v as never]}>{v}</Tag>,
     },
     {
       title: '操作',
       key: 'actions',
-      width: 140,
+      width: 210,
       fixed: 'right',
-      render: (_v, record) => {
+      render: (_: unknown, record) => {
         const isProtected =
           record.source_type === '表格上传' || record.source_type === '模拟数据'
         return (
           <Space size={4}>
+            {onViewDetail && (
+              <Button
+                type="link"
+                size="small"
+                icon={<EyeOutlined />}
+                onClick={() => onViewDetail(record)}
+              >
+                详情
+              </Button>
+            )}
             <Button
               type="link"
               size="small"
@@ -274,24 +264,23 @@ export default function CustomerTable({
             >
               编辑
             </Button>
-            <Tooltip
-              title={
-                isProtected
-                  ? '该数据为受保护数据，不支持删除'
-                  : ''
-              }
-            >
+            {isProtected ? (
+              <Tooltip title={`${record.source_type}数据受保护，不支持删除`}>
+                <Button type="link" size="small" icon={<LockOutlined />} disabled>
+                  受保护
+                </Button>
+              </Tooltip>
+            ) : (
               <Button
                 type="link"
                 size="small"
                 danger
-                icon={isProtected ? <LockOutlined /> : <DeleteOutlined />}
-                disabled={isProtected}
+                icon={<DeleteOutlined />}
                 onClick={() => onDelete(record)}
               >
-                {isProtected ? '受保护' : '删除'}
+                删除
               </Button>
-            </Tooltip>
+            )}
           </Space>
         )
       },
@@ -300,75 +289,70 @@ export default function CustomerTable({
 
   return (
     <Table<CustomerRecord>
-      className="customer-table"
-      rowKey={(r) => String(r.id ?? r.pro_account_id)}
-      dataSource={data}
+      rowKey="id"
       columns={columns}
+      dataSource={data}
       loading={loading}
-      size="middle"
-      scroll={{ x: 2700, y: 'calc(100vh - 460px)' }}
+      scroll={{ x: 3200 }}
+      size="small"
       pagination={{
-        pageSize: 20,
         showSizeChanger: true,
+        showQuickJumper: true,
         pageSizeOptions: [10, 20, 50, 100],
-        showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条 / 共 ${total} 条`,
-      }}
-      locale={{
-        emptyText: (
-          <Empty
-            description="暂无客户数据，可通过右上角「新增客户」或「批量上传」录入"
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-          />
-        ),
+        defaultPageSize: 20,
+        showTotal: (total) => `共 ${total} 条`,
       }}
     />
   )
 }
 
-// 截图预览 Modal（独立组件，供上层调用）
+// ============ 截图预览 Modal ============
+interface ScreenshotPreviewModalProps {
+  open: boolean
+  record: CustomerRecord | null
+  onClose: () => void
+}
 export function ScreenshotPreviewModal({
   open,
   record,
   onClose,
-}: {
-  open: boolean
-  record: CustomerRecord | null
-  onClose: () => void
-}) {
-  const list = record?.chat_screenshots || []
+}: ScreenshotPreviewModalProps) {
+  const [_activeIdx, setActiveIdx] = useState(0)
+  const arr = Array.isArray(record?.chat_screenshots) ? record!.chat_screenshots : []
   return (
     <Modal
       open={open}
-      title={
-        <span>
-          <PictureOutlined /> 「{record?.pro_account_name || '—'}」的聊天截图（{list.length}）
-        </span>
-      }
-      footer={null}
       onCancel={onClose}
-      width={840}
-      centered
-      getContainer={() => document.body}
+      footer={null}
+      width={880}
+      title={`跟进聊天截图 - ${record?.pro_account_name || ''}`}
+      destroyOnClose
     >
-      {list.length === 0 ? (
-        <Empty description="暂无截图" />
+      {arr.length === 0 ? (
+        <Empty description="暂无截图留痕" />
       ) : (
-        <div className="screenshot-preview-grid">
-          {list.map((s, i) => (
-            <div key={i} className="preview-item">
-              <Image
-                src={s.url}
-                alt={s.caption || `screenshot-${i}`}
-                style={{ maxWidth: '100%', maxHeight: 400, objectFit: 'contain' }}
-              />
-              {s.caption && (
-                <div className="preview-caption-inline">
-                  <InfoCircleOutlined /> {s.caption}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+        <Image.PreviewGroup>
+          <Space wrap>
+            {arr.map((s, i) => (
+              <div key={i} className="screenshot-preview-item">
+                <Image
+                  src={s.url}
+                  width={160}
+                  height={160}
+                  style={{ objectFit: 'cover', borderRadius: 6 }}
+                  preview={{
+                    onVisibleChange: (v) => v && setActiveIdx(i),
+                  }}
+                />
+                {s.caption && (
+                  <Text type="secondary" className="screenshot-caption">
+                    {s.caption}
+                  </Text>
+                )}
+              </div>
+            ))}
+          </Space>
+        </Image.PreviewGroup>
       )}
     </Modal>
   )

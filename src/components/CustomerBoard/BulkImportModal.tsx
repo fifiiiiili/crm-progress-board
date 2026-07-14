@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Modal, Upload, Button, Table, Alert, Space, message, Tag } from 'antd'
-import { UploadOutlined, DownloadOutlined, FileExcelOutlined } from '@ant-design/icons'
+import { Modal, Upload, Button, Table, Tag, Alert, Space, Typography, Divider } from 'antd'
+import type { UploadProps } from 'antd'
+import { InboxOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons'
 import * as XLSX from 'xlsx'
-import dayjs from 'dayjs'
+import type { ColumnsType } from 'antd/es/table'
 import {
   EXCEL_HEADER_MAP,
   STATUS_OPTIONS,
@@ -10,11 +11,18 @@ import {
   CUSTOMER_SCALE_OPTIONS,
   PRIORITY_OPTIONS,
   INTENT_OPTIONS,
+  PLATFORM_OPTIONS,
+  ACCOUNT_STATUS_OPTIONS,
+  CREATIVE_STATUS_OPTIONS,
+  LAUNCH_STAGE_OPTIONS,
   type CustomerRecord,
 } from './constants'
 import { existingProAccountIds } from '../../api'
 
-interface Props {
+const { Text, Paragraph } = Typography
+const { Dragger } = Upload
+
+interface BulkImportModalProps {
   open: boolean
   currentUser: string
   onCancel: () => void
@@ -22,359 +30,317 @@ interface Props {
 }
 
 interface ParsedRow {
+  key: number
   raw: Record<string, unknown>
-  record: Partial<CustomerRecord>
-  errors: string[]
-  isDuplicate?: boolean
+  data: Partial<CustomerRecord>
+  error: string | null
 }
 
-const VALID_STATUS = new Set<string>(STATUS_OPTIONS.map((s) => s.value))
-const VALID_BLOCK = new Set<string>(BLOCK_TYPE_OPTIONS.map((s) => s.value))
-const VALID_SCALE = new Set<string>(CUSTOMER_SCALE_OPTIONS.map((s) => s.value))
-const VALID_PRIORITY = new Set<string>(PRIORITY_OPTIONS.map((s) => s.value))
-const VALID_INTENT = new Set<string>(INTENT_OPTIONS.map((s) => s.value))
+const VALID_STATUS = new Set<string>(STATUS_OPTIONS)
+const VALID_BLOCK = new Set<string>(BLOCK_TYPE_OPTIONS)
+const VALID_SCALE = new Set<string>(CUSTOMER_SCALE_OPTIONS)
+const VALID_PRIORITY = new Set<string>(PRIORITY_OPTIONS)
+const VALID_INTENT = new Set<string>(INTENT_OPTIONS)
+const VALID_PLATFORM = new Set<string>(PLATFORM_OPTIONS)
+const VALID_ACCOUNT_STATUS = new Set<string>(ACCOUNT_STATUS_OPTIONS)
+const VALID_CREATIVE_STATUS = new Set<string>(CREATIVE_STATUS_OPTIONS)
+const VALID_LAUNCH_STAGE = new Set<string>(LAUNCH_STAGE_OPTIONS)
 
-export default function BulkImportModal({ open, currentUser, onCancel, onSubmit }: Props) {
-  const [parsedRows, setParsedRows] = useState<ParsedRow[]>([])
+function parseValue(field: keyof CustomerRecord, val: unknown): unknown {
+  if (val === null || val === undefined || val === '') return null
+  const s = String(val).trim()
+  if (
+    field === 'last_follow_up_at' ||
+    field === 'lead_created_at' ||
+    field === 'first_test_date'
+  ) {
+    const d = new Date(s)
+    return isNaN(d.getTime()) ? null : d.toISOString()
+  }
+  if (field === 'monthly_budget' || field === 'test_budget' || field === 'creative_count') {
+    const n = Number(s)
+    return isNaN(n) ? null : n
+  }
+  return s
+}
+
+export default function BulkImportModal({
+  open,
+  currentUser,
+  onCancel,
+  onSubmit,
+}: BulkImportModalProps) {
+  const [rows, setRows] = useState<ParsedRow[]>([])
+  const [busy, setBusy] = useState(false)
   const [fileName, setFileName] = useState<string>('')
-  const [importing, setImporting] = useState(false)
 
   const reset = () => {
-    setParsedRows([])
+    setRows([])
     setFileName('')
   }
-
-  const handleClose = () => {
+  const handleCancel = () => {
     reset()
     onCancel()
   }
 
-  const parseValue = (row: Record<string, unknown>, cnKey: string): string => {
-    const v = row[cnKey]
-    if (v === undefined || v === null) return ''
-    return String(v).trim()
-  }
+  const uploadProps: UploadProps = {
+    accept: '.xlsx,.xls,.csv',
+    beforeUpload: async (file) => {
+      try {
+        const buf = await file.arrayBuffer()
+        const wb = XLSX.read(buf, { type: 'array' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws)
 
-  const parseTime = (v: unknown): string | null => {
-    if (!v) return null
-    if (typeof v === 'number') {
-      const d = XLSX.SSF.parse_date_code(v)
-      if (d) {
-        return dayjs(new Date(d.y, d.m - 1, d.d, d.H, d.M, d.S)).toISOString()
-      }
-    }
-    const s = String(v).trim()
-    if (!s) return null
-    const d = dayjs(s)
-    return d.isValid() ? d.toISOString() : null
-  }
+        // 转换 raw → parsed
+        const parsed: ParsedRow[] = raw.map((r, i) => {
+          const data: Partial<CustomerRecord> = {}
+          for (const [zh, field] of Object.entries(EXCEL_HEADER_MAP)) {
+            if (r[zh] !== undefined) {
+              ;(data as Record<string, unknown>)[field] = parseValue(field, r[zh])
+            }
+          }
+          let error: string | null = null
+          // 必填
+          if (!data.pro_account_id) error = '账号 ID 缺失'
+          else if (!data.pro_account_name) error = '账号名称缺失'
+          else if (!data.customer_source) error = '客户来源缺失'
+          else if (!data.channel_manager) error = '对应渠道经理缺失'
+          else if (!data.current_status) error = '当前状态缺失'
+          else if (data.current_status && !VALID_STATUS.has(data.current_status as string))
+            error = `当前状态非法：${data.current_status}`
+          else if (data.block_type && !VALID_BLOCK.has(data.block_type as string))
+            error = `卡点类型非法：${data.block_type}`
+          else if (data.customer_scale && !VALID_SCALE.has(data.customer_scale as string))
+            error = `客户体量非法：${data.customer_scale}`
+          else if (data.priority && !VALID_PRIORITY.has(data.priority as string))
+            error = `优先级非法：${data.priority}`
+          else if (data.intent && !VALID_INTENT.has(data.intent as string))
+            error = `投放意向非法：${data.intent}`
+          else if (data.platform && !VALID_PLATFORM.has(data.platform as string))
+            error = `投放平台非法：${data.platform}`
+          else if (
+            data.account_status &&
+            !VALID_ACCOUNT_STATUS.has(data.account_status as string)
+          )
+            error = `账户状态非法：${data.account_status}`
+          else if (
+            data.creative_status &&
+            !VALID_CREATIVE_STATUS.has(data.creative_status as string)
+          )
+            error = `素材状态非法：${data.creative_status}`
+          else if (data.launch_stage && !VALID_LAUNCH_STAGE.has(data.launch_stage as string))
+            error = `投放阶段非法：${data.launch_stage}`
 
-  const handleFile = async (file: File) => {
-    try {
-      setFileName(file.name)
-      const buffer = await file.arrayBuffer()
-      const wb = XLSX.read(buffer, { type: 'array', cellDates: false })
-      const firstSheet = wb.Sheets[wb.SheetNames[0]]
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: '' })
+          return { key: i, raw: r, data, error }
+        })
 
-      if (!rows.length) {
-        message.warning('文件为空或未识别到有效行')
-        return false
-      }
-
-      const headers = Object.keys(rows[0])
-      const knownHeaders = headers.filter((h) => EXCEL_HEADER_MAP[h])
-      if (!knownHeaders.length) {
-        message.error(
-          '未识别到有效字段，请下载模板参考。识别字段：' +
-            Object.keys(EXCEL_HEADER_MAP).slice(0, 5).join('、'),
-        )
-        return false
-      }
-
-      const parsed: ParsedRow[] = rows.map((raw) => {
-        const record: Partial<CustomerRecord> = {}
-        const errors: string[] = []
-
-        for (const [cnKey, fieldKey] of Object.entries(EXCEL_HEADER_MAP)) {
-          if (raw[cnKey] === undefined) continue
-          const val = parseValue(raw, cnKey)
-          if (!val) continue
-          if (fieldKey === 'last_follow_up_at' || fieldKey === 'lead_created_at') {
-            const t = parseTime(raw[cnKey])
-            if (t) (record as Record<string, unknown>)[fieldKey] = t
-          } else if (fieldKey === 'monthly_budget') {
-            const num = Number(val)
-            if (Number.isFinite(num)) (record as Record<string, unknown>)[fieldKey] = num
+        // 文件内自身重复检测
+        const seen = new Map<string, number>()
+        parsed.forEach((p) => {
+          if (p.error || !p.data.pro_account_id) return
+          const pid = p.data.pro_account_id as string
+          if (seen.has(pid)) {
+            p.error = `文件内账号 ID 重复（第 ${seen.get(pid)! + 2} 行）`
           } else {
-            ;(record as Record<string, unknown>)[fieldKey] = val
+            seen.set(pid, p.key)
+          }
+        })
+
+        // 数据库查重
+        const valid = parsed.filter((p) => !p.error && p.data.pro_account_id)
+        if (valid.length > 0) {
+          const existing = await existingProAccountIds(
+            valid.map((p) => p.data.pro_account_id as string),
+          )
+          for (const p of valid) {
+            if (existing.has(p.data.pro_account_id as string)) {
+              p.error =
+                '该账号 ID 已存在，请勿重复添加。如需更新信息，请在原记录中编辑。'
+            }
           }
         }
 
-        // 必填校验
-        if (!record.pro_account_id) errors.push('账号 ID 为空')
-        if (!record.customer_source) errors.push('客户来源为空')
-        if (!record.pro_account_name) errors.push('账号名称为空')
-        if (!record.channel_manager) errors.push('渠道经理为空')
-        if (!record.current_status) errors.push('当前状态为空')
-        else if (!VALID_STATUS.has(record.current_status)) {
-          errors.push(`当前状态「${record.current_status}」不在允许范围`)
-        }
-        if (record.block_type && !VALID_BLOCK.has(record.block_type)) {
-          errors.push(`卡点类型「${record.block_type}」不在允许范围`)
-        }
-        if (record.customer_scale && !VALID_SCALE.has(record.customer_scale)) {
-          errors.push(`客户体量「${record.customer_scale}」不在允许范围`)
-        }
-        if (record.priority && !VALID_PRIORITY.has(record.priority)) {
-          errors.push(`优先级「${record.priority}」不在允许范围`)
-        }
-        if (record.intent && !VALID_INTENT.has(record.intent)) {
-          errors.push(`投放意向「${record.intent}」不在允许范围`)
-        }
-
-        return { raw, record, errors }
-      })
-
-      const validIds = parsed
-        .filter((p) => !p.errors.length && p.record.pro_account_id)
-        .map((p) => p.record.pro_account_id!)
-      const existingIds = await existingProAccountIds(validIds)
-      const seenInFile = new Set<string>()
-      for (const p of parsed) {
-        const id = p.record.pro_account_id
-        if (!id) continue
-        if (existingIds.has(id)) {
-          p.isDuplicate = true
-          p.errors.push('账号 ID 在系统中已存在')
-        } else if (seenInFile.has(id)) {
-          p.isDuplicate = true
-          p.errors.push('文件内重复的账号 ID')
-        } else {
-          seenInFile.add(id)
-        }
+        setRows(parsed)
+        setFileName(file.name)
+      } catch (e) {
+        console.error(e)
+        alert('文件解析失败：' + (e instanceof Error ? e.message : String(e)))
       }
-
-      setParsedRows(parsed)
-    } catch (e) {
-      message.error('解析失败：' + (e instanceof Error ? e.message : String(e)))
-    }
-    return false
+      return false
+    },
+    showUploadList: false,
+    maxCount: 1,
   }
 
-  const downloadTemplate = () => {
-    // 使用唯一表头（避免多个别名重复列）
-    const headers = [
-      '客户来源',
-      '账号 ID',
-      '账号名称',
-      '国家/地区',
-      '一级行业',
-      '二级行业',
-      '对应渠道经理',
-      '客户体量',
-      '预估月预算',
-      '客户优先级',
-      '投放意向',
-      '当前状态',
-      '卡点类型',
-      '跟进情况',
-      '下一步动作',
-      '最近跟进时间',
-      '线索创建时间',
-      '备注',
-    ]
-    const sample: Record<string, string> = {}
-    for (const h of headers) sample[h] = ''
-    sample['客户来源'] = 'AM 推荐'
-    sample['账号 ID'] = 'MK1234567'
-    sample['账号名称'] = '示例品牌 Studio 001'
-    sample['国家/地区'] = '日本'
-    sample['一级行业'] = '美妆个护'
-    sample['二级行业'] = '护肤'
-    sample['对应渠道经理'] = '林岚'
-    sample['客户体量'] = '中客户'
-    sample['预估月预算'] = '80000'
-    sample['客户优先级'] = 'P1'
-    sample['投放意向'] = '高'
-    sample['当前状态'] = '跟进中'
-    sample['卡点类型'] = '材料缺失'
-    sample['跟进情况'] = '首次触达完成，客户对合作感兴趣'
-    sample['下一步动作'] = '本周内完成开户资料收集'
-    sample['最近跟进时间'] = dayjs().format('YYYY-MM-DD HH:mm')
-    sample['线索创建时间'] = dayjs().subtract(3, 'day').format('YYYY-MM-DD')
-    sample['备注'] = '重点客户'
-    const ws = XLSX.utils.json_to_sheet([sample], { header: headers })
-    ;(ws['!cols'] as unknown as XLSX.ColInfo[]) = headers.map(() => ({ wch: 15 }))
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '客户明细')
-    XLSX.writeFile(wb, '广告客户开通进度_模板.xlsx')
-  }
+  const validRows = rows.filter((r) => !r.error)
+  const errorRows = rows.filter((r) => !!r.error)
 
   const handleImport = async () => {
-    const validRows = parsedRows.filter((p) => !p.errors.length)
-    if (!validRows.length) {
-      message.warning('没有可导入的有效行')
-      return
-    }
-    setImporting(true)
+    if (validRows.length === 0) return
+    setBusy(true)
     try {
-      const records: Omit<CustomerRecord, 'id'>[] = validRows.map((p) => ({
-        pro_account_id: p.record.pro_account_id!,
-        customer_source: p.record.customer_source!,
-        pro_account_name: p.record.pro_account_name!,
-        country_region: p.record.country_region || null,
-        industry_l1: p.record.industry_l1 || null,
-        industry_l2: p.record.industry_l2 || null,
-        channel_manager: p.record.channel_manager!,
-        customer_scale: p.record.customer_scale || null,
-        monthly_budget: p.record.monthly_budget ?? null,
-        priority: p.record.priority || null,
-        intent: p.record.intent || null,
-        current_status: p.record.current_status!,
-        block_type: p.record.block_type || null,
-        follow_up_note: p.record.follow_up_note || null,
-        next_action: p.record.next_action || null,
-        last_follow_up_at: p.record.last_follow_up_at || null,
-        lead_created_at: p.record.lead_created_at || new Date().toISOString(),
+      const now = new Date().toISOString()
+      const records: Omit<CustomerRecord, 'id'>[] = validRows.map((r) => ({
+        customer_source: (r.data.customer_source as string) || '',
+        pro_account_id: (r.data.pro_account_id as string) || '',
+        pro_account_name: (r.data.pro_account_name as string) || '',
+        country_region: (r.data.country_region as string) || null,
+        industry_l1: (r.data.industry_l1 as string) || null,
+        industry_l2: (r.data.industry_l2 as string) || null,
+        channel_manager: (r.data.channel_manager as string) || '',
+        customer_scale: (r.data.customer_scale as never) || null,
+        monthly_budget: (r.data.monthly_budget as number) ?? null,
+        priority: (r.data.priority as never) || null,
+        intent: (r.data.intent as never) || null,
+        current_status: (r.data.current_status as never) || '未跟进',
+        block_type: (r.data.block_type as never) || null,
+        follow_up_note: (r.data.follow_up_note as string) || null,
+        next_action: (r.data.next_action as string) || null,
+        last_follow_up_at: (r.data.last_follow_up_at as string) || now,
+        lead_created_at: (r.data.lead_created_at as string) || now,
         chat_screenshots: null,
-        remark: p.record.remark || null,
+        remark: (r.data.remark as string) || null,
         source_type: '表格上传',
         creator: currentUser,
         author_name: currentUser,
+        platform: (r.data.platform as never) || null,
+        account_status: (r.data.account_status as never) || null,
+        creative_status: (r.data.creative_status as never) || null,
+        creative_count: (r.data.creative_count as number) ?? null,
+        creative_review: null,
+        test_budget: (r.data.test_budget as number) ?? null,
+        launch_stage: (r.data.launch_stage as never) || null,
+        first_test_date: (r.data.first_test_date as string) || null,
       }))
       await onSubmit(records)
-      message.success(`已导入 ${records.length} 条数据`)
       reset()
       onCancel()
-    } catch (e) {
-      message.error('导入失败：' + (e instanceof Error ? e.message : String(e)))
     } finally {
-      setImporting(false)
+      setBusy(false)
     }
   }
 
-  const validCount = parsedRows.filter((p) => !p.errors.length).length
-  const errorCount = parsedRows.length - validCount
+  const downloadTemplate = () => {
+    const templateRow: Record<string, string> = {}
+    for (const zh of Object.keys(EXCEL_HEADER_MAP)) {
+      templateRow[zh] = ''
+    }
+    templateRow['客户来源'] = '示例：销售BD推荐'
+    templateRow['账号ID'] = 'AD_100999'
+    templateRow['账号名称'] = '示例账号'
+    templateRow['对应渠道经理'] = '模拟经理A'
+    templateRow['当前状态'] = '未跟进'
+    templateRow['客户优先级'] = 'P2'
+    templateRow['投放意向'] = '中'
+    templateRow['预估月预算'] = '50000'
+    templateRow['投放平台'] = '巨量引擎'
+    const ws = XLSX.utils.json_to_sheet([templateRow])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '模板')
+    XLSX.writeFile(wb, '客户批量上传模板.xlsx')
+  }
+
+  const previewColumns: ColumnsType<ParsedRow> = [
+    {
+      title: '#',
+      key: 'row',
+      width: 50,
+      render: (_: unknown, __: ParsedRow, idx) => idx + 1,
+    },
+    {
+      title: '状态',
+      key: 'status',
+      width: 90,
+      render: (_: unknown, r) =>
+        r.error ? <Tag color="red">错误</Tag> : <Tag color="success">可导入</Tag>,
+    },
+    { title: '账号ID', dataIndex: ['data', 'pro_account_id'], width: 120 },
+    { title: '账号名称', dataIndex: ['data', 'pro_account_name'], width: 180 },
+    { title: '客户来源', dataIndex: ['data', 'customer_source'], width: 120 },
+    { title: '当前状态', dataIndex: ['data', 'current_status'], width: 130 },
+    { title: '优先级', dataIndex: ['data', 'priority'], width: 80 },
+    {
+      title: '错误信息',
+      dataIndex: 'error',
+      width: 300,
+      render: (v: string) => (v ? <Text type="danger">{v}</Text> : '—'),
+    },
+  ]
 
   return (
     <Modal
       open={open}
-      title={
-        <span>
-          <FileExcelOutlined /> 表格批量上传
-        </span>
-      }
+      title="表格批量上传"
+      onCancel={handleCancel}
       width={1000}
-      onCancel={handleClose}
-      footer={[
-        <Button key="cancel" onClick={handleClose}>
-          取消
-        </Button>,
-        <Button
-          key="import"
-          type="primary"
-          disabled={!validCount}
-          loading={importing}
-          onClick={handleImport}
-        >
-          导入 {validCount} 条有效数据
-        </Button>,
-      ]}
       destroyOnClose
-      maskClosable={false}
-      getContainer={() => document.body}
+      footer={
+        <Space>
+          <Button icon={<DownloadOutlined />} onClick={downloadTemplate}>
+            下载模板
+          </Button>
+          <Button onClick={handleCancel}>取消</Button>
+          <Button
+            type="primary"
+            icon={<UploadOutlined />}
+            loading={busy}
+            disabled={validRows.length === 0}
+            onClick={handleImport}
+          >
+            导入 {validRows.length} 条
+          </Button>
+        </Space>
+      }
     >
       <Alert
         type="info"
         showIcon
-        message="表格上传的数据将开启数据保护，导入后无法在页面删除，请仔细核对。"
-        style={{ marginBottom: 12 }}
+        message="批量导入说明"
+        description={
+          <div>
+            <Paragraph style={{ margin: 0 }}>
+              1. 支持 xlsx / xls / csv 格式；首行必须是中文字段名（可下载模板）
+              <br />
+              2. 上传的数据自动标记为「表格上传」，受数据保护，不支持删除
+              <br />
+              3. 账号 ID 为唯一识别，与已有数据或本文件内重复都会被标记为错误
+              <br />
+              4. 状态、优先级、体量等字段必须使用预设枚举值
+            </Paragraph>
+          </div>
+        }
+        style={{ marginBottom: 16 }}
       />
 
-      <Space style={{ marginBottom: 12 }} wrap>
-        <Button icon={<DownloadOutlined />} onClick={downloadTemplate}>
-          下载模板
-        </Button>
-        <Upload
-          accept=".xlsx,.xls,.csv"
-          beforeUpload={handleFile}
-          showUploadList={false}
-          maxCount={1}
-        >
-          <Button icon={<UploadOutlined />} type="primary">
-            选择文件 (.xlsx / .xls / .csv)
-          </Button>
-        </Upload>
-        {fileName && <span style={{ color: '#55606b' }}>已选：{fileName}</span>}
-      </Space>
-
-      {parsedRows.length > 0 && (
+      {rows.length === 0 ? (
+        <Dragger {...uploadProps} style={{ padding: 20 }}>
+          <p className="ant-upload-drag-icon">
+            <InboxOutlined />
+          </p>
+          <p className="ant-upload-text">点击或拖拽文件到此上传</p>
+          <p className="ant-upload-hint">支持 xlsx / xls / csv 格式</p>
+        </Dragger>
+      ) : (
         <>
-          <Space style={{ marginBottom: 8 }}>
-            <Tag color="success">有效：{validCount}</Tag>
-            {errorCount > 0 && <Tag color="error">异常：{errorCount}</Tag>}
-            <span style={{ color: '#8c9098' }}>共 {parsedRows.length} 行</span>
+          <Space style={{ marginBottom: 12 }}>
+            <Text>
+              📄 {fileName}
+            </Text>
+            <Tag color="success">可导入 {validRows.length}</Tag>
+            {errorRows.length > 0 && <Tag color="red">错误 {errorRows.length}</Tag>}
+            <Button size="small" onClick={reset}>
+              重新选择文件
+            </Button>
           </Space>
-
-          <Table
+          <Divider style={{ margin: '8px 0' }} />
+          <Table<ParsedRow>
+            rowKey="key"
+            columns={previewColumns}
+            dataSource={rows}
             size="small"
-            rowKey={(_r, i) => String(i)}
-            dataSource={parsedRows}
-            scroll={{ y: 320, x: 900 }}
-            pagination={{ pageSize: 50, showSizeChanger: false }}
-            columns={[
-              {
-                title: '状态',
-                width: 70,
-                render: (_, r) =>
-                  r.errors.length ? (
-                    <Tag color="error">异常</Tag>
-                  ) : (
-                    <Tag color="success">有效</Tag>
-                  ),
-              },
-              {
-                title: '账号ID',
-                dataIndex: ['record', 'pro_account_id'],
-                width: 130,
-                ellipsis: true,
-              },
-              {
-                title: '账号名称',
-                dataIndex: ['record', 'pro_account_name'],
-                width: 160,
-                ellipsis: true,
-              },
-              {
-                title: '客户来源',
-                dataIndex: ['record', 'customer_source'],
-                width: 110,
-                ellipsis: true,
-              },
-              {
-                title: '渠道经理',
-                dataIndex: ['record', 'channel_manager'],
-                width: 100,
-                ellipsis: true,
-              },
-              {
-                title: '当前状态',
-                dataIndex: ['record', 'current_status'],
-                width: 100,
-                ellipsis: true,
-              },
-              {
-                title: '异常原因',
-                dataIndex: 'errors',
-                render: (errs: string[]) =>
-                  errs.length ? (
-                    <span style={{ color: '#d4380d', fontSize: 12 }}>{errs.join('；')}</span>
-                  ) : (
-                    <span style={{ color: '#8c9098' }}>—</span>
-                  ),
-              },
-            ]}
+            scroll={{ x: 1200, y: 380 }}
+            pagination={{ pageSize: 20 }}
           />
         </>
       )}
