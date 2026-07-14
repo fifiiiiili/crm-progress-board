@@ -107,6 +107,44 @@ export function detectRisks(r: CustomerRecord): RiskAlert[] {
     })
   }
 
+  // 9. 高优客户未具备投放条件
+  if (
+    (r.priority === 'P0' || r.priority === 'P1') &&
+    r.readiness_status &&
+    r.readiness_status !== '可进入测试投放'
+  ) {
+    alerts.push({
+      type: '高优未具备投放条件',
+      level: '高风险',
+      reason: `${r.priority} 高优客户当前投放准备状态为「${r.readiness_status}」，尚未具备进入测试投放的条件。`,
+      suggestion: '建议对照投放准备检查逐项补齐，优先解决账户/素材/预算维度短板。',
+    })
+  }
+
+  // 10. 预算明确但账户未开通
+  const testBudget = Number(r.test_budget || 0)
+  if (testBudget > 0 && r.account_status && r.account_status !== '已开户') {
+    alerts.push({
+      type: '预算明确但账户未开通',
+      level: '中风险',
+      reason: `已确认测试预算 ${testBudget.toLocaleString()} 元，但广告账户仍处于「${r.account_status}」状态，无法进入投放。`,
+      suggestion: '建议加速开户流程，避免预算已确认却因账户未开通而错过投放窗口。',
+    })
+  }
+
+  // 11. 高预算 + 审核卡住/资质卡审（增强现有规则）
+  if (
+    budget >= 50000 &&
+    (r.current_status === '审核卡住' || r.block_type === '资质卡审')
+  ) {
+    alerts.push({
+      type: '高预算卡在审核',
+      level: '高风险',
+      reason: `预估月预算 ${budget.toLocaleString()} 元，但当前${r.current_status === '审核卡住' ? '状态为「审核卡住」' : '卡点为「资质卡审」'}，投放启动被阻塞。`,
+      suggestion: '建议启动跨部门专项，协同资质、审核团队优先处理。',
+    })
+  }
+
   return alerts
 }
 
@@ -148,6 +186,7 @@ export function buildSuggestedAction(r: CustomerRecord): string {
 
 /**
  * AI 跟进建议生成（规则版，80-150 字）
+ * 结构：客户画像 → 当前状态 → 投放准备结论 → 建议动作
  */
 export function generateAiAdvice(r: CustomerRecord): string {
   const parts: string[] = []
@@ -161,14 +200,21 @@ export function generateAiAdvice(r: CustomerRecord): string {
     `该账号为 ${r.priority || '未定优先级'} 客户（${r.customer_scale || '体量未标注'}），${budgetTxt}（预估月预算约 ${budget.toLocaleString()} 元）。`,
   )
 
-  // 当前状态
-  parts.push(
-    `当前状态：${r.current_status}${
-      r.block_type && r.block_type !== '无卡点' ? `，卡点为「${r.block_type}」` : ''
-    }。`,
-  )
+  // 投放准备摘要（引用 checkReadiness 结论）
+  const summary: string[] = []
+  if (r.account_status) summary.push(`账户${r.account_status}`)
+  if (r.creative_status) summary.push(`素材${r.creative_status}`)
+  const testBudget = Number(r.test_budget || 0)
+  if (testBudget > 0) summary.push(`测试预算 ${testBudget.toLocaleString()} 元`)
+  if (summary.length > 0) {
+    parts.push(`当前状态：${r.current_status}，${summary.join('、')}。`)
+  } else {
+    parts.push(
+      `当前状态：${r.current_status}${r.block_type && r.block_type !== '无卡点' ? `，卡点为「${r.block_type}」` : ''}。`,
+    )
+  }
 
-  // 投放准备
+  // 投放准备度
   const score = r.readiness_score ?? 0
   parts.push(
     `投放准备度评分 ${score} 分（${r.readiness_status || '未评估'}）。`,
@@ -181,6 +227,10 @@ export function generateAiAdvice(r: CustomerRecord): string {
     parts.push(`建议：${top.suggestion}`)
   } else if (r.readiness_status === '可进入测试投放') {
     parts.push('建议：可进入小预算测试环节，控制单日预算并记录首轮测试数据以指导后续放量。')
+  } else if (r.account_status === '开户中' && r.creative_status === '制作中') {
+    parts.push(
+      '建议：优先跟进开户进度，并同步素材制作与审核节奏，待账户开通且素材审核通过后，再进入小预算测试阶段。',
+    )
   } else if (r.current_status === '跟进中') {
     parts.push('建议：保持每 2-3 个工作日更新一次进展，同步下一步动作和预期时间。')
   } else {

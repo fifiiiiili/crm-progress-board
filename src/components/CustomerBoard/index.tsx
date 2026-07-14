@@ -476,7 +476,7 @@ export default function CustomerBoard() {
         message={
           <span>
             <strong>Demo 演示版</strong>
-            &nbsp;·&nbsp;本项目使用模拟数据，用于展示广告业务中客户开通、账户准备、投放准备、状态跟进、异常预警和过程复盘的管理场景，不包含任何真实客户或平台内部信息。
+            &nbsp;·&nbsp;本项目使用模拟数据，模拟广告业务中客户开通、账户准备、资料审核、素材准备、状态跟进、异常预警和过程复盘的管理场景，不包含任何真实客户或平台内部信息。
             数据仅保存在你当前浏览器的 localStorage 中，不同浏览器互相隔离。
           </span>
         }
@@ -525,7 +525,8 @@ export default function CustomerBoard() {
               color="default"
               style={{ padding: '4px 10px' }}
             >
-              数据更新时间：{updatedAt ? dayjs(updatedAt).format('YYYY-MM-DD HH:mm') : '—'}
+              数据更新时间：{updatedAt ? dayjs(updatedAt).format('YYYY-MM-DD HH:mm:ss') : '—'}
+              {updatedAt ? ` · ${dayjs(updatedAt).fromNow()}` : ''}
             </Tag>
           </Tooltip>
           <Button icon={<ReloadOutlined />} onClick={handleRefreshBoard} loading={loading}>

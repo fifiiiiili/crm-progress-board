@@ -33,6 +33,7 @@ import {
   type CustomerRecord,
 } from './constants'
 import { detectRisks, highestRiskLevel, generateAiAdvice } from '../../utils/risk'
+import ReadinessCheck from './ReadinessCheck'
 
 const { Text, Paragraph } = Typography
 
@@ -244,6 +245,11 @@ export default function AccountDetailDrawer({
             {record.first_test_date ? dayjs(record.first_test_date).format('YYYY-MM-DD') : '—'}
           </Descriptions.Item>
         </Descriptions>
+      </Card>
+
+      {/* 模块 4.5：投放准备检查 */}
+      <Card size="small" title={<Space>🎯 投放准备检查</Space>} style={{ marginBottom: 12 }}>
+        <ReadinessCheck record={record} compact />
       </Card>
 
       {/* 模块五：风险预警信息 */}

@@ -43,6 +43,7 @@ export type CreativeStatusValue =
   | '未准备'
   | '制作中'
   | '已上传'
+  | '已提交审核'
   | '审核通过'
   | '审核拒绝'
   | '部分通过'
@@ -101,6 +102,7 @@ export const CREATIVE_STATUS_OPTIONS: CreativeStatusValue[] = [
   '未准备',
   '制作中',
   '已上传',
+  '已提交审核',
   '审核通过',
   '审核拒绝',
   '部分通过',
@@ -199,6 +201,7 @@ export const CREATIVE_STATUS_COLOR_MAP: Record<CreativeStatusValue, string> = {
   未准备: 'default',
   制作中: 'processing',
   已上传: 'blue',
+  已提交审核: 'cyan',
   审核通过: 'success',
   审核拒绝: 'error',
   部分通过: 'orange',
